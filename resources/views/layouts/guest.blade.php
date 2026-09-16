@@ -3,15 +3,19 @@
     <head>
         <!-- Theme init (must run before paint): localStorage.theme falls back to prefers-color-scheme. Plain JS only, no Livewire/Alpine. -->
         <script>
-            try {
-                var storedTheme = localStorage.getItem('theme');
-                var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                if (storedTheme === 'dark' || (!storedTheme && prefersDark)) {
-                    document.documentElement.classList.add('dark');
-                } else {
-                    document.documentElement.classList.remove('dark');
-                }
-            } catch (e) {}
+            window.ControlDeskApplyTheme = window.ControlDeskApplyTheme || function () {
+                try {
+                    var storedTheme = localStorage.getItem('theme');
+                    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    document.documentElement.classList.toggle('dark', storedTheme === 'dark' || (! storedTheme && prefersDark));
+                } catch (e) {}
+            };
+            window.ControlDeskApplyTheme();
+            // Livewire `wire:navigate` swaps in fresh markup and drops runtime
+            // classes from <html>, so re-apply the theme after every visit.
+            document.addEventListener('livewire:navigated', function () {
+                window.ControlDeskApplyTheme();
+            });
         </script>
 
         <meta charset="utf-8">
