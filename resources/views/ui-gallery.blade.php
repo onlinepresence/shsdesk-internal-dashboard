@@ -76,6 +76,16 @@
             </section>
 
             <section class="flex flex-col gap-4">
+                <x-section-title title="Buttons" subtitle="Full hierarchy for comparison." />
+                <div class="flex flex-wrap items-center gap-2">
+                    <x-primary-button type="button">Primary</x-primary-button>
+                    <x-secondary-button type="button">Secondary</x-secondary-button>
+                    <x-tertiary-button type="button">Tertiary</x-tertiary-button>
+                    <x-danger-button type="button">Danger</x-danger-button>
+                </div>
+            </section>
+
+            <section class="flex flex-col gap-4">
                 <x-section-title title="Badges" subtitle="All five tones." />
                 <div class="flex flex-wrap items-center gap-2">
                     <x-badge tone="active">Active</x-badge>
