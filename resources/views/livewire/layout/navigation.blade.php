@@ -25,9 +25,7 @@ new class extends Component
     <!-- Mobile topbar -->
     <div class="sticky top-0 z-20 flex h-16 items-center gap-2 border-b border-gray-200 bg-white px-4 dark:border-white/10 dark:bg-gray-800 lg:hidden">
         <button type="button" @click="sidebarOpen = true" aria-label="Open navigation" class="inline-flex items-center justify-center rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white dark:focus:ring-accent transition duration-150 ease-in-out">
-            <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <x-lucide-menu class="h-6 w-6" aria-hidden="true" />
         </button>
         <a href="{{ route('dashboard') }}" wire:navigate class="flex items-center gap-2">
             <x-application-logo class="h-8 w-8" />
@@ -61,9 +59,7 @@ new class extends Component
                 class="relative flex w-full flex-1"
             >
                 <button type="button" @click="sidebarOpen = false" aria-label="Close navigation" class="absolute right-3 top-3 z-10 inline-flex items-center justify-center rounded-md p-2 text-slate-300/80 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-accent transition duration-150 ease-in-out">
-                    <svg class="h-5 w-5" stroke="currentColor" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <x-lucide-x class="h-5 w-5" aria-hidden="true" />
                 </button>
                 <x-sidebar-panel class="flex-1" />
             </div>

@@ -11,14 +11,9 @@
     {{ $attributes->merge(['class' => 'inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-white text-mist shadow-sm transition hover:border-brand hover:text-brand focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 dark:border-white/15 dark:bg-deep dark:text-slate-200 dark:hover:border-accent dark:hover:text-white dark:focus:ring-accent dark:focus:ring-offset-ink']) }}
 >
     {{-- Moon: shown in light mode --}}
-    <svg data-theme-toggle-icon="moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
-        <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79Z" />
-    </svg>
+    <x-lucide-moon data-theme-toggle-icon="moon" class="h-5 w-5" />
     {{-- Sun: shown in dark mode --}}
-    <svg data-theme-toggle-icon="sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="hidden h-5 w-5">
-        <circle cx="12" cy="12" r="4" />
-        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-    </svg>
+    <x-lucide-sun data-theme-toggle-icon="sun" class="hidden h-5 w-5" />
 </button>
 
 @once

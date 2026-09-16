@@ -39,9 +39,7 @@
             <x-theme-toggle />
         </div>
         <button wire:click="logout" type="button" class="mt-3 inline-flex items-center gap-2 text-sm text-slate-300/80 hover:text-white focus:outline-none focus:ring-2 focus:ring-accent rounded-md transition duration-150 ease-in-out">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true">
-                <path d="M15 12H4M11 8l-4 4 4 4M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4" />
-            </svg>
+            <x-lucide-log-out class="h-4 w-4" aria-hidden="true" />
             {{ __('Log Out') }}
         </button>
     </div>
