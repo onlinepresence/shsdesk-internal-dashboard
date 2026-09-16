@@ -97,7 +97,10 @@ new #[Layout('layouts.app')] class extends Component
                         <a href="{{ route('deployments.index') }}" wire:navigate class="inline-flex items-center px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
                             {{ __('Cancel') }}
                         </a>
-                        <x-primary-button>{{ __('Register') }}</x-primary-button>
+                        <x-primary-button wire:loading.attr="disabled" wire:target="register">
+                            <span wire:loading.remove wire:target="register">{{ __('Register') }}</span>
+                            <span wire:loading wire:target="register">{{ __('Registering…') }}</span>
+                        </x-primary-button>
                     </div>
                 </form>
             </x-card>

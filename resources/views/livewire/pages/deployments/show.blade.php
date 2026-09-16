@@ -149,29 +149,34 @@ new #[Layout('layouts.app')] class extends Component
             <x-card>
                 <x-slot name="title">Heartbeat history</x-slot>
                 <x-table>
-                    <x-slot name="head">
-                        <th>Received</th>
-                        <th>Version</th>
-                        <th>Students</th>
-                        <th>Teachers</th>
-                        <th>Users</th>
-                        <th>Modules</th>
-                    </x-slot>
-                    <x-slot name="body">
-                        @foreach ($this->heartbeats as $heartbeat)
-                            <tr>
-                                <td>{{ $heartbeat->created_at->diffForHumans() }}</td>
-                                <td>{{ $heartbeat->app_version ?? '—' }}</td>
-                                <td>{{ $heartbeat->students }}</td>
-                                <td>{{ $heartbeat->teachers }}</td>
-                                <td>{{ $heartbeat->users }}</td>
-                                <td>{{ count($heartbeat->modules_in_use ?? []) }}</td>
-                            </tr>
-                        @endforeach
-                    </x-slot>
-                    <x-slot name="empty">
-                        <x-empty-state title="No heartbeats yet" message="Receipts appear here once the instance checks in." />
-                    </x-slot>
+                    <x-table.head>
+                        <x-table.row :hover="false">
+                            <x-table.heading>Received</x-table.heading>
+                            <x-table.heading>Version</x-table.heading>
+                            <x-table.heading>Students</x-table.heading>
+                            <x-table.heading>Teachers</x-table.heading>
+                            <x-table.heading>Users</x-table.heading>
+                            <x-table.heading>Modules</x-table.heading>
+                        </x-table.row>
+                    </x-table.head>
+                    @if ($this->heartbeats->isNotEmpty())
+                        <x-table.body>
+                            @foreach ($this->heartbeats as $heartbeat)
+                                <x-table.row>
+                                    <x-table.cell>{{ $heartbeat->created_at->diffForHumans() }}</x-table.cell>
+                                    <x-table.cell>{{ $heartbeat->app_version ?? '—' }}</x-table.cell>
+                                    <x-table.cell>{{ $heartbeat->students }}</x-table.cell>
+                                    <x-table.cell>{{ $heartbeat->teachers }}</x-table.cell>
+                                    <x-table.cell>{{ $heartbeat->users }}</x-table.cell>
+                                    <x-table.cell>{{ count($heartbeat->modules_in_use ?? []) }}</x-table.cell>
+                                </x-table.row>
+                            @endforeach
+                        </x-table.body>
+                    @else
+                        <x-table.empty>
+                            <x-empty-state title="No heartbeats yet" message="Receipts appear here once the instance checks in." />
+                        </x-table.empty>
+                    @endif
                 </x-table>
             </x-card>
 
@@ -187,8 +192,9 @@ new #[Layout('layouts.app')] class extends Component
                         <x-secondary-button x-on:click="$dispatch('close')">
                             {{ __('Cancel') }}
                         </x-secondary-button>
-                        <x-primary-button class="ms-3">
-                            {{ __('Regenerate') }}
+                        <x-primary-button class="ms-3" wire:loading.attr="disabled" wire:target="regenerateToken">
+                            <span wire:loading.remove wire:target="regenerateToken">{{ __('Regenerate') }}</span>
+                            <span wire:loading wire:target="regenerateToken">{{ __('Regenerating…') }}</span>
                         </x-primary-button>
                     </div>
                 </form>
@@ -206,8 +212,9 @@ new #[Layout('layouts.app')] class extends Component
                         <x-secondary-button x-on:click="$dispatch('close')">
                             {{ __('Cancel') }}
                         </x-secondary-button>
-                        <x-danger-button class="ms-3">
-                            {{ __('Revoke deployment') }}
+                        <x-danger-button class="ms-3" wire:loading.attr="disabled" wire:target="revoke">
+                            <span wire:loading.remove wire:target="revoke">{{ __('Revoke deployment') }}</span>
+                            <span wire:loading wire:target="revoke">{{ __('Revoking…') }}</span>
                         </x-danger-button>
                     </div>
                 </form>

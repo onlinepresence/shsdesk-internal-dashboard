@@ -39,39 +39,43 @@
             </section>
 
             <section class="flex flex-col gap-4">
-                <x-section-title title="Table" subtitle="Responsive wrapper built in; empty slot renders when the body is empty." />
+                <x-section-title title="Table" subtitle="Composed from sub-components; empty renders an explicit state." />
                 <x-table>
-                    <x-slot name="head">
-                        <th>Name</th>
-                        <th>Status</th>
-                        <th class="!text-right">Seats</th>
-                    </x-slot>
-                    <x-slot name="body">
-                        <tr>
-                            <td>Acme Corp</td>
-                            <td><x-badge tone="success">Active</x-badge></td>
-                            <td class="text-right">42</td>
-                        </tr>
-                        <tr>
-                            <td>Globex</td>
-                            <td><x-badge tone="warn">Expiring</x-badge></td>
-                            <td class="text-right">17</td>
-                        </tr>
-                        <tr>
-                            <td>Initech</td>
-                            <td><x-badge tone="danger">Suspended</x-badge></td>
-                            <td class="text-right">0</td>
-                        </tr>
-                    </x-slot>
+                    <x-table.head>
+                        <x-table.row :hover="false">
+                            <x-table.heading>Name</x-table.heading>
+                            <x-table.heading>Status</x-table.heading>
+                            <x-table.heading class="!text-right">Seats</x-table.heading>
+                        </x-table.row>
+                    </x-table.head>
+                    <x-table.body>
+                        <x-table.row>
+                            <x-table.cell>Acme Corp</x-table.cell>
+                            <x-table.cell><x-badge tone="success">Active</x-badge></x-table.cell>
+                            <x-table.cell class="text-right">42</x-table.cell>
+                        </x-table.row>
+                        <x-table.row>
+                            <x-table.cell>Globex</x-table.cell>
+                            <x-table.cell><x-badge tone="warn">Expiring</x-badge></x-table.cell>
+                            <x-table.cell class="text-right">17</x-table.cell>
+                        </x-table.row>
+                        <x-table.row>
+                            <x-table.cell>Initech</x-table.cell>
+                            <x-table.cell><x-badge tone="danger">Suspended</x-badge></x-table.cell>
+                            <x-table.cell class="text-right">0</x-table.cell>
+                        </x-table.row>
+                    </x-table.body>
                 </x-table>
                 <x-table>
-                    <x-slot name="head">
-                        <th>Name</th>
-                        <th>Status</th>
-                    </x-slot>
-                    <x-slot name="empty">
-                        <x-empty-state title="No rows yet" message="The empty slot renders when the table body is empty." />
-                    </x-slot>
+                    <x-table.head>
+                        <x-table.row :hover="false">
+                            <x-table.heading>Name</x-table.heading>
+                            <x-table.heading>Status</x-table.heading>
+                        </x-table.row>
+                    </x-table.head>
+                    <x-table.empty>
+                        <x-empty-state title="No rows yet" message="The empty sub-component renders an explicit state." />
+                    </x-table.empty>
                 </x-table>
             </section>
 

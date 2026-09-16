@@ -116,36 +116,41 @@ new #[Layout('layouts.app')] class extends Component
                 </div>
 
                 <x-table>
-                    <x-slot name="head">
-                        <th>School</th>
-                        <th>Product</th>
-                        <th>Version</th>
-                        <th>Status</th>
-                        <th>Last seen</th>
-                    </x-slot>
-                    <x-slot name="body">
-                        @foreach ($this->deployments as $deployment)
-                            <tr>
-                                <td>
-                                    <a href="{{ route('deployments.show', $deployment) }}" wire:navigate class="font-medium text-brand hover:text-deep dark:text-slate-100 dark:hover:text-white">
-                                        {{ $deployment->school_name }}
-                                    </a>
-                                    <div class="font-mono text-xs text-slate-400 dark:text-slate-500">{{ $deployment->uuid }}</div>
-                                </td>
-                                <td>{{ $deployment->product }}</td>
-                                <td>{{ $deployment->app_version ?? '—' }}</td>
-                                <td><x-badge :tone="$this->statusTone($deployment->status)">{{ ucfirst($deployment->status) }}</x-badge></td>
-                                <td>{{ $deployment->last_seen_at?->diffForHumans() ?? 'Never' }}</td>
-                            </tr>
-                        @endforeach
-                    </x-slot>
-                    <x-slot name="empty">
-                        <x-empty-state title="No deployments found" message="Register the first school product instance to start receiving heartbeats.">
-                            <a href="{{ route('deployments.create') }}" wire:navigate class="text-sm font-medium text-brand underline hover:text-deep dark:text-slate-200 dark:hover:text-white">
-                                {{ __('Register deployment') }}
-                            </a>
-                        </x-empty-state>
-                    </x-slot>
+                    <x-table.head>
+                        <x-table.row :hover="false">
+                            <x-table.heading>School</x-table.heading>
+                            <x-table.heading>Product</x-table.heading>
+                            <x-table.heading>Version</x-table.heading>
+                            <x-table.heading>Status</x-table.heading>
+                            <x-table.heading>Last seen</x-table.heading>
+                        </x-table.row>
+                    </x-table.head>
+                    @if ($this->deployments->isNotEmpty())
+                        <x-table.body>
+                            @foreach ($this->deployments as $deployment)
+                                <x-table.row>
+                                    <x-table.cell>
+                                        <a href="{{ route('deployments.show', $deployment) }}" wire:navigate class="font-medium text-brand hover:text-deep dark:text-slate-100 dark:hover:text-white">
+                                            {{ $deployment->school_name }}
+                                        </a>
+                                        <div class="font-mono text-xs text-slate-400 dark:text-slate-500">{{ $deployment->uuid }}</div>
+                                    </x-table.cell>
+                                    <x-table.cell>{{ $deployment->product }}</x-table.cell>
+                                    <x-table.cell>{{ $deployment->app_version ?? '—' }}</x-table.cell>
+                                    <x-table.cell><x-badge :tone="$this->statusTone($deployment->status)">{{ ucfirst($deployment->status) }}</x-badge></x-table.cell>
+                                    <x-table.cell>{{ $deployment->last_seen_at?->diffForHumans() ?? 'Never' }}</x-table.cell>
+                                </x-table.row>
+                            @endforeach
+                        </x-table.body>
+                    @else
+                        <x-table.empty>
+                            <x-empty-state title="No deployments found" message="Register the first school product instance to start receiving heartbeats.">
+                                <a href="{{ route('deployments.create') }}" wire:navigate class="text-sm font-medium text-brand underline hover:text-deep dark:text-slate-200 dark:hover:text-white">
+                                    {{ __('Register deployment') }}
+                                </a>
+                            </x-empty-state>
+                        </x-table.empty>
+                    @endif
                 </x-table>
 
                 <div class="mt-4">
