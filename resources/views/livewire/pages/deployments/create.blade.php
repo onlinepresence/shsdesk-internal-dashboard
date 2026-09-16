@@ -79,11 +79,11 @@ new #[Layout('layouts.app')] class extends Component
 
                     <div>
                         <x-input-label for="product" :value="__('Product')" />
-                        <select wire:model="product" id="product" name="product" required class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-brand focus:ring-brand dark:border-white/15 dark:bg-ink dark:text-slate-100 dark:focus:border-accent dark:focus:ring-accent">
+                        <x-select wire:model="product" id="product" name="product" required class="mt-1 block w-full">
                             @foreach (Deployment::PRODUCTS as $productOption)
                                 <option value="{{ $productOption }}">{{ $productOption }}</option>
                             @endforeach
-                        </select>
+                        </x-select>
                         <x-input-error :messages="$errors->get('product')" class="mt-2" />
                     </div>
 
@@ -94,9 +94,9 @@ new #[Layout('layouts.app')] class extends Component
                     </div>
 
                     <div class="flex items-center justify-end gap-2">
-                        <a href="{{ route('deployments.index') }}" wire:navigate class="inline-flex items-center px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
+                        <x-button-link :href="route('deployments.index')" wire:navigate variant="tertiary">
                             {{ __('Cancel') }}
-                        </a>
+                        </x-button-link>
                         <x-primary-button wire:loading.attr="disabled" wire:target="register">
                             <span wire:loading.remove wire:target="register">{{ __('Register') }}</span>
                             <span wire:loading wire:target="register">{{ __('Registering…') }}</span>

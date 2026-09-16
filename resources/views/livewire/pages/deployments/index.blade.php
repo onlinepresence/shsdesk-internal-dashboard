@@ -92,9 +92,9 @@ new #[Layout('layouts.app')] class extends Component
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6">
             <x-section-title title="Deployments" subtitle="School product instances reporting heartbeats.">
-                <a href="{{ route('deployments.create') }}" wire:navigate class="inline-flex items-center rounded-md border border-transparent bg-brand px-4 py-2 text-xs font-semibold uppercase tracking-widest text-white transition duration-150 ease-in-out hover:bg-deep focus:bg-deep focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 active:bg-ink dark:bg-brand dark:hover:bg-accent dark:focus:bg-accent dark:focus:ring-accent dark:focus:ring-offset-deep dark:active:bg-accent">
+                <x-button-link :href="route('deployments.create')" wire:navigate>
                     {{ __('Register') }}
-                </a>
+                </x-button-link>
             </x-section-title>
 
             <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -107,12 +107,12 @@ new #[Layout('layouts.app')] class extends Component
             <x-card>
                 <div class="mb-4 flex flex-col gap-2 sm:flex-row">
                     <x-text-input wire:model.live.debounce.500ms="search" type="search" placeholder="Search school, URL, UUID, product..." class="block w-full sm:max-w-xs" aria-label="Search deployments" />
-                    <select wire:model.live="status" aria-label="Filter by status" class="block w-full rounded-md border-slate-300 shadow-sm focus:border-brand focus:ring-brand dark:border-white/15 dark:bg-ink dark:text-slate-100 dark:focus:border-accent dark:focus:ring-accent sm:w-auto">
+                    <x-select wire:model.live="status" aria-label="Filter by status" class="block w-full sm:w-auto">
                         <option value="all">All statuses</option>
                         <option value="active">Active</option>
                         <option value="stale">Stale</option>
                         <option value="revoked">Revoked</option>
-                    </select>
+                    </x-select>
                 </div>
 
                 <x-table>
