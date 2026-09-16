@@ -26,6 +26,12 @@ return [
                 ['label' => 'Profile', 'route' => 'profile', 'icon' => 'user'],
             ],
         ],
+        [
+            'section' => 'Manage',
+            'items' => [
+                ['label' => 'Deployments', 'route' => 'deployments.index', 'icon' => 'server'],
+            ],
+        ],
     ],
 
 ];

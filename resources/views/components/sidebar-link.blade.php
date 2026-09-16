@@ -5,6 +5,7 @@
 $iconComponents = [
     'dashboard' => 'lucide-layout-dashboard',
     'user' => 'lucide-user',
+    'server' => 'lucide-server',
 ];
 
 $iconComponent = $iconComponents[$icon] ?? 'lucide-circle';
