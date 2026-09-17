@@ -76,7 +76,11 @@ new #[Layout('layouts.app')] class extends Component
                         </x-table.body>
                     @else
                         <x-table.empty>
-                            <x-empty-state title="No deployments yet" message="Register a deployment before issuing licences." />
+                            <x-empty-state title="No deployments yet" message="Register a deployment before issuing licences.">
+                                <a href="{{ route('deployments.create') }}" wire:navigate class="text-sm font-medium text-brand underline hover:text-deep dark:text-slate-200 dark:hover:text-white">
+                                    {{ __('Register deployment') }}
+                                </a>
+                            </x-empty-state>
                         </x-table.empty>
                     @endif
                 </x-table>

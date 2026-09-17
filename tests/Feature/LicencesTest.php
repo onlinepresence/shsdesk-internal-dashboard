@@ -339,3 +339,37 @@ test('catalogue toggles offerings and logs the change', function () {
     expect($feature->fresh()->active)->toBeFalse();
     $this->assertDatabaseHas('activity_log', ['description' => 'catalogue.toggled']);
 });
+
+test('catalogue creates a feature and logs it', function () {
+    $this->actingAs(actingSuperAdmin());
+
+    Volt::test('pages.catalogue.index')
+        ->set('key', 'module_custom')
+        ->set('label', 'Custom Module')
+        ->set('description', 'Custom description.')
+        ->set('kind', 'module')
+        ->set('base_price', '1800')
+        ->set('renewal_base', '450')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('features', [
+        'key' => 'module_custom',
+        'label' => 'Custom Module',
+        'kind' => 'module',
+    ]);
+    $this->assertDatabaseHas('activity_log', ['description' => 'catalogue.created']);
+});
+
+test('catalogue rejects duplicate keys', function () {
+    $this->actingAs(actingSuperAdmin());
+
+    Volt::test('pages.catalogue.index')
+        ->set('key', 'module_finance')
+        ->set('label', 'Duplicate')
+        ->set('kind', 'module')
+        ->call('save')
+        ->assertHasErrors(['key']);
+
+    expect(Feature::where('key', 'module_finance')->count())->toBe(1);
+});
