@@ -1,15 +1,18 @@
 <?php
 
 use App\Models\Feature;
-use Illuminate\Support\Collection;
+use App\Models\Setting;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use Livewire\WithPagination;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use WithPagination;
     public ?int $editingId = null;
 
     public ?string $key = null;
@@ -30,10 +33,32 @@ new #[Layout('layouts.app')] class extends Component
 
     public $renewal_base = null;
 
-    #[Computed]
-    public function features(): Collection
+    public ?string $currency = null;
+
+    public $core_base = null;
+
+    public $discount_rate = null;
+
+    /** @var list<array{min: mixed, max: mixed, multiplier: mixed, label: ?string}> */
+    public array $bands = [];
+
+    public function mount(): void
     {
-        return Feature::orderBy('id')->get();
+        $this->currency = Setting::get(Setting::CURRENCY, 'GHS');
+        $this->core_base = Setting::get(Setting::CORE_BASE_ANNUAL);
+        $this->discount_rate = Setting::get(Setting::ALL_MODULES_DISCOUNT_RATE);
+        $this->bands = array_map(fn (array $band): array => [
+            'min' => $band['min'] ?? null,
+            'max' => $band['max'] ?? null,
+            'multiplier' => $band['multiplier'] ?? null,
+            'label' => $band['label'] ?? null,
+        ], Setting::studentBands());
+    }
+
+    #[Computed]
+    public function features(): LengthAwarePaginator
+    {
+        return Feature::orderBy('id')->paginate(10);
     }
 
     public function kindTone(string $kind): string
@@ -126,6 +151,7 @@ new #[Layout('layouts.app')] class extends Component
             activity('catalogue')
                 ->performedOn($feature)
                 ->causedBy(Auth::user())
+                ->withProperties(['old' => null, 'new' => $feature->fresh()->only(['key', 'label', 'description', 'kind', 'locked', 'default_on', 'active', 'base_price', 'renewal_base'])])
                 ->log('catalogue.created');
 
             $this->dispatch('close-feature-form');
@@ -176,6 +202,79 @@ new #[Layout('layouts.app')] class extends Component
             ->causedBy(Auth::user())
             ->withProperties(['active' => $feature->active])
             ->log('catalogue.toggled');
+    }
+
+    public function addBand(): void
+    {
+        $this->bands[] = ['min' => null, 'max' => null, 'multiplier' => null, 'label' => null];
+    }
+
+    public function removeBand(int $index): void
+    {
+        unset($this->bands[$index]);
+
+        $this->bands = array_values($this->bands);
+    }
+
+    /**
+     * Persist pricing globals. Everything the annual preview needs beyond
+     * per-feature prices lives here, editable without touching config.
+     */
+    public function saveGlobals(): void
+    {
+        foreach ($this->bands as $index => $band) {
+            if (($band['max'] ?? null) === '') {
+                $this->bands[$index]['max'] = null;
+            }
+        }
+
+        $validated = $this->validate([
+            'currency' => ['required', 'string', 'max:10'],
+            'core_base' => ['required', 'numeric', 'min:0'],
+            'discount_rate' => ['required', 'numeric', 'min:0', 'max:1'],
+            'bands' => ['required', 'array', 'min:1'],
+            'bands.*.min' => ['required', 'integer', 'min:0'],
+            'bands.*.max' => ['nullable', 'integer', 'min:0'],
+            'bands.*.multiplier' => ['required', 'numeric', 'min:0'],
+            'bands.*.label' => ['required', 'string', 'max:255'],
+        ]);
+
+        foreach ($validated['bands'] as $index => $band) {
+            if ($band['max'] !== null && $band['max'] < $band['min']) {
+                $this->addError("bands.{$index}.max", __('The band maximum must be at least its minimum.'));
+
+                return;
+            }
+        }
+
+        $before = [
+            'currency' => Setting::get(Setting::CURRENCY),
+            'core_base_annual' => Setting::get(Setting::CORE_BASE_ANNUAL),
+            'all_modules_discount_rate' => Setting::get(Setting::ALL_MODULES_DISCOUNT_RATE),
+            'student_bands' => Setting::studentBands(),
+        ];
+
+        Setting::set(Setting::CURRENCY, $validated['currency']);
+        Setting::set(Setting::CORE_BASE_ANNUAL, (string) round((float) $validated['core_base'], 2));
+        Setting::set(Setting::ALL_MODULES_DISCOUNT_RATE, (string) $validated['discount_rate']);
+        Setting::set(Setting::STUDENT_BANDS, json_encode(array_map(fn (array $band): array => [
+            'min' => (int) $band['min'],
+            'max' => $band['max'] === null ? null : (int) $band['max'],
+            'multiplier' => (float) $band['multiplier'],
+            'label' => $band['label'],
+        ], $validated['bands'])));
+
+        $after = [
+            'currency' => Setting::get(Setting::CURRENCY),
+            'core_base_annual' => Setting::get(Setting::CORE_BASE_ANNUAL),
+            'all_modules_discount_rate' => Setting::get(Setting::ALL_MODULES_DISCOUNT_RATE),
+            'student_bands' => Setting::studentBands(),
+        ];
+
+        activity('catalogue')
+            ->causedBy(Auth::user())
+            ->withProperties(['before' => $before, 'after' => $after])
+            ->log('settings.updated');
     }
 }; ?>
 
@@ -234,6 +333,75 @@ new #[Layout('layouts.app')] class extends Component
                         @endforeach
                     </x-table.body>
                 </x-table>
+
+                <div class="mt-4">
+                    {{ $this->features->links() }}
+                </div>
+            </x-card>
+
+            <x-card>
+                <x-slot name="title">Pricing globals</x-slot>
+                <div class="flex flex-col gap-4">
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                        <div>
+                            <x-input-label for="currency" :value="__('Currency')" />
+                            <x-text-input wire:model="currency" id="currency" class="mt-1 block w-full" type="text" name="currency" required maxlength="10" />
+                            <x-input-error :messages="$errors->get('currency')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="core_base" :value="__('Core base annual')" />
+                            <x-text-input wire:model="core_base" id="core_base" class="mt-1 block w-full" type="number" min="0" step="0.01" name="core_base" required />
+                            <x-input-error :messages="$errors->get('core_base')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="discount_rate" :value="__('All-modules discount rate (0–1)')" />
+                            <x-text-input wire:model="discount_rate" id="discount_rate" class="mt-1 block w-full" type="number" min="0" max="1" step="0.01" name="discount_rate" required />
+                            <x-input-error :messages="$errors->get('discount_rate')" class="mt-2" />
+                        </div>
+                    </div>
+                    <div>
+                        <x-input-label :value="__('Student bands')" />
+                        <div class="mt-1 flex flex-col gap-2">
+                            @foreach ($bands as $index => $band)
+                                <div class="grid grid-cols-2 items-start gap-2 sm:grid-cols-[1fr_1fr_1fr_2fr_auto]">
+                                    <div>
+                                        <x-text-input wire:model="bands.{{ $index }}.min" class="block w-full" type="number" min="0" placeholder="Min" aria-label="Band minimum students" />
+                                        <x-input-error :messages="$errors->get('bands.'.$index.'.min')" class="mt-2" />
+                                    </div>
+                                    <div>
+                                        <x-text-input wire:model="bands.{{ $index }}.max" class="block w-full" type="number" min="0" placeholder="Max (blank = open)" aria-label="Band maximum students" />
+                                        <x-input-error :messages="$errors->get('bands.'.$index.'.max')" class="mt-2" />
+                                    </div>
+                                    <div>
+                                        <x-text-input wire:model="bands.{{ $index }}.multiplier" class="block w-full" type="number" min="0" step="0.01" placeholder="×" aria-label="Band multiplier" />
+                                        <x-input-error :messages="$errors->get('bands.'.$index.'.multiplier')" class="mt-2" />
+                                    </div>
+                                    <div>
+                                        <x-text-input wire:model="bands.{{ $index }}.label" class="block w-full" type="text" placeholder="Label" aria-label="Band label" />
+                                        <x-input-error :messages="$errors->get('bands.'.$index.'.label')" class="mt-2" />
+                                    </div>
+                                    <div>
+                                        <x-tertiary-button type="button" wire:click="removeBand({{ $index }})" aria-label="Remove band">
+                                            {{ __('Remove') }}
+                                        </x-tertiary-button>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                        <div class="mt-2 flex items-center gap-2">
+                            <x-tertiary-button type="button" wire:click="addBand">
+                                {{ __('Add band') }}
+                            </x-tertiary-button>
+                            <x-input-error :messages="$errors->get('bands')" class="mt-2" />
+                        </div>
+                    </div>
+                    <div class="flex justify-end">
+                        <x-primary-button wire:loading.attr="disabled" wire:target="saveGlobals">
+                            <span wire:loading.remove wire:target="saveGlobals">{{ __('Save globals') }}</span>
+                            <span wire:loading wire:target="saveGlobals">{{ __('Saving…') }}</span>
+                        </x-primary-button>
+                    </div>
+                </div>
             </x-card>
 
             <div
@@ -289,7 +457,7 @@ new #[Layout('layouts.app')] class extends Component
                             </div>
                             <div>
                                 <x-input-label for="description" :value="__('Description')" />
-                                <x-text-input wire:model="description" id="description" class="mt-1 block w-full" type="text" name="description" />
+                                <textarea wire:model="description" id="description" name="description" rows="3" class="mt-1 block w-full border-slate-300 dark:border-white/15 dark:bg-ink dark:text-slate-100 focus:border-brand dark:focus:border-accent focus:ring-brand dark:focus:ring-accent rounded-md shadow-sm"></textarea>
                                 <x-input-error :messages="$errors->get('description')" class="mt-2" />
                             </div>
                             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">

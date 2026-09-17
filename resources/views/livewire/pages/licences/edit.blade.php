@@ -27,6 +27,22 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?string $notes = null;
 
+    public string $hosting_mode = 'self_hosted';
+
+    public $implementation_fee = null;
+
+    public $config_fee = null;
+
+    public $migration_fee = null;
+
+    public $training_admin = 0;
+
+    public $training_teacher = 0;
+
+    public $training_onsite = 0;
+
+    public bool $founding_client = false;
+
     public function mount(Deployment $deployment): void
     {
         $this->deployment = $deployment;
@@ -38,6 +54,10 @@ new #[Layout('layouts.app')] class extends Component
             $this->modules = $this->moduleKeys(true);
             $this->starts_at = today()->toDateString();
             $this->expires_at = today()->addYear()->toDateString();
+            $this->hosting_mode = 'self_hosted';
+            $this->implementation_fee = Licence::DEFAULT_IMPLEMENTATION_FEE;
+            $this->config_fee = Licence::DEFAULT_CONFIG_FEE;
+            $this->migration_fee = Licence::DEFAULT_MIGRATION_FEE;
 
             return;
         }
@@ -48,17 +68,30 @@ new #[Layout('layouts.app')] class extends Component
         $this->starts_at = $current->starts_at?->format('Y-m-d');
         $this->expires_at = $current->expires_at?->format('Y-m-d');
         $this->notes = $current->notes;
+        $this->hosting_mode = $current->hosting_mode ?? 'self_hosted';
+        $this->implementation_fee = $current->implementation_fee;
+        $this->config_fee = $current->config_fee;
+        $this->migration_fee = $current->migration_fee;
+        $this->training_admin = $current->training_admin ?? 0;
+        $this->training_teacher = $current->training_teacher ?? 0;
+        $this->training_onsite = $current->training_onsite ?? 0;
+        $this->founding_client = (bool) $current->founding_client;
     }
 
     /**
      * Read-only annual preview for the current form state.
      *
-     * @return array{currency: string, band: string, multiplier: float, lines: list<array{label: string, amount: float}>, discount: float, total: float}
+     * @return array{currency: string, band: string, multiplier: float, lines: list<array{label: string, amount: float}>, discount: float, founding_discount: float, total: float}
      */
     #[Computed]
     public function preview(): array
     {
-        return Licence::previewFor(array_fill_keys($this->modules, true), $this->maxStudents());
+        return Licence::previewFor(
+            array_fill_keys($this->modules, true),
+            $this->maxStudents(),
+            $this->reportedStudents(),
+            $this->quoteInput(),
+        );
     }
 
     /**
@@ -73,10 +106,23 @@ new #[Layout('layouts.app')] class extends Component
             'core' => array_fill_keys($validated['core'] ?? [], true),
             'modules' => array_fill_keys($validated['modules'] ?? [], true),
             'caps' => $this->maxStudents() !== null ? ['max_active_students' => $this->maxStudents()] : null,
-            'price_snapshot' => Licence::priceSnapshot(array_fill_keys($validated['modules'] ?? [], true), $this->maxStudents()),
+            'price_snapshot' => Licence::priceSnapshot(
+                array_fill_keys($validated['modules'] ?? [], true),
+                $this->maxStudents(),
+                $this->reportedStudents(),
+                $this->quoteInput(),
+            ),
             'starts_at' => $validated['starts_at'],
             'expires_at' => $validated['expires_at'],
             'notes' => $validated['notes'],
+            'hosting_mode' => $validated['hosting_mode'],
+            'implementation_fee' => $this->moneyOrNull($validated['implementation_fee'] ?? null),
+            'config_fee' => $this->moneyOrNull($validated['config_fee'] ?? null),
+            'migration_fee' => $this->moneyOrNull($validated['migration_fee'] ?? null),
+            'training_admin' => (int) ($validated['training_admin'] ?? 0),
+            'training_teacher' => (int) ($validated['training_teacher'] ?? 0),
+            'training_onsite' => (int) ($validated['training_onsite'] ?? 0),
+            'founding_client' => (bool) ($validated['founding_client'] ?? false),
         ];
 
         $current = $this->deployment->latestLicence;
@@ -87,15 +133,23 @@ new #[Layout('layouts.app')] class extends Component
             activity('licences')
                 ->performedOn($licence)
                 ->causedBy(Auth::user())
+                ->withProperties(['old' => null, 'new' => $licence->fresh()->toArray()])
                 ->log('licence.created');
 
             session()->flash('status', __('Licence issued.'));
         } else {
+            $before = $current->only([
+                'core', 'modules', 'caps', 'starts_at', 'expires_at', 'notes',
+                'hosting_mode', 'implementation_fee', 'config_fee', 'migration_fee',
+                'training_admin', 'training_teacher', 'training_onsite', 'founding_client',
+            ]);
+
             $current->update($payload);
 
             activity('licences')
                 ->performedOn($current)
                 ->causedBy(Auth::user())
+                ->withProperties(['old' => $before, 'new' => $current->fresh()->only(array_keys($before))])
                 ->log('licence.updated');
 
             session()->flash('status', __('Licence updated.'));
@@ -124,15 +178,38 @@ new #[Layout('layouts.app')] class extends Component
             'price_snapshot' => Licence::priceSnapshot(
                 array_fill_keys(array_keys(array_filter((array) $current->modules)), true),
                 isset($current->caps['max_active_students']) ? (int) $current->caps['max_active_students'] : null,
+                $this->reportedStudents(),
+                [
+                    'hosting_mode' => $current->hosting_mode,
+                    'implementation_fee' => $current->implementation_fee !== null ? (float) $current->implementation_fee : null,
+                    'config_fee' => $current->config_fee !== null ? (float) $current->config_fee : null,
+                    'migration_fee' => $current->migration_fee !== null ? (float) $current->migration_fee : null,
+                    'training_admin' => $current->training_admin ?? 0,
+                    'training_teacher' => $current->training_teacher ?? 0,
+                    'training_onsite' => $current->training_onsite ?? 0,
+                    'founding_client' => (bool) $current->founding_client,
+                ],
             ),
             'notes' => $current->notes,
             'starts_at' => today()->toDateString(),
             'expires_at' => $base->copy()->addYear()->toDateString(),
+            'hosting_mode' => $current->hosting_mode,
+            'implementation_fee' => $current->implementation_fee,
+            'config_fee' => $current->config_fee,
+            'migration_fee' => $current->migration_fee,
+            'training_admin' => $current->training_admin ?? 0,
+            'training_teacher' => $current->training_teacher ?? 0,
+            'training_onsite' => $current->training_onsite ?? 0,
+            'founding_client' => (bool) $current->founding_client,
         ]);
 
         activity('licences')
             ->performedOn($renewed)
             ->causedBy(Auth::user())
+            ->withProperties([
+                'old' => ['licence_id' => $current->id, 'expires_at' => $current->expires_at?->toDateString()],
+                'new' => ['licence_id' => $renewed->id, 'expires_at' => $renewed->expires_at->toDateString()],
+            ])
             ->log('licence.renewed');
 
         session()->flash('status', __('Licence renewed.'));
@@ -151,6 +228,14 @@ new #[Layout('layouts.app')] class extends Component
             'modules' => ['array'],
             'modules.*' => [Rule::in($this->moduleKeys(false))],
             'max_students' => ['nullable', 'integer', 'min:1'],
+            'hosting_mode' => ['required', 'string', Rule::in(Licence::HOSTING_MODES)],
+            'implementation_fee' => ['nullable', 'numeric', 'min:0'],
+            'config_fee' => ['nullable', 'numeric', 'min:0'],
+            'migration_fee' => ['nullable', 'numeric', 'min:0'],
+            'training_admin' => ['nullable', 'integer', 'min:0'],
+            'training_teacher' => ['nullable', 'integer', 'min:0'],
+            'training_onsite' => ['nullable', 'integer', 'min:0'],
+            'founding_client' => ['boolean'],
             'starts_at' => ['nullable', 'date'],
             'expires_at' => [
                 'nullable',
@@ -167,7 +252,7 @@ new #[Layout('layouts.app')] class extends Component
 
     protected function normalizeBlanks(): void
     {
-        foreach (['starts_at', 'expires_at', 'notes'] as $field) {
+        foreach (['starts_at', 'expires_at', 'notes', 'implementation_fee', 'config_fee', 'migration_fee'] as $field) {
             if ($this->{$field} === '') {
                 $this->{$field} = null;
             }
@@ -175,6 +260,12 @@ new #[Layout('layouts.app')] class extends Component
 
         if ($this->max_students === '') {
             $this->max_students = null;
+        }
+
+        foreach (['training_admin', 'training_teacher', 'training_onsite'] as $field) {
+            if ($this->{$field} === '' || $this->{$field} === null) {
+                $this->{$field} = 0;
+            }
         }
     }
 
@@ -185,6 +276,43 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         return (int) $this->max_students;
+    }
+
+    /**
+     * Quote dimensions for the preview and snapshot, with money rounded
+     * to pesewas and counts coerced to integers.
+     *
+     * @return array{hosting_mode: ?string, implementation_fee: ?float, config_fee: ?float, migration_fee: ?float, training_admin: int, training_teacher: int, training_onsite: int, founding_client: bool}
+     */
+    protected function quoteInput(): array
+    {
+        return [
+            'hosting_mode' => $this->hosting_mode,
+            'implementation_fee' => $this->moneyOrNull($this->implementation_fee),
+            'config_fee' => $this->moneyOrNull($this->config_fee),
+            'migration_fee' => $this->moneyOrNull($this->migration_fee),
+            'training_admin' => (int) ($this->training_admin ?? 0),
+            'training_teacher' => (int) ($this->training_teacher ?? 0),
+            'training_onsite' => (int) ($this->training_onsite ?? 0),
+            'founding_client' => (bool) $this->founding_client,
+        ];
+    }
+
+    protected function moneyOrNull(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return round((float) $value, 2);
+    }
+
+    /**
+     * Latest reported student count, if this deployment ever checked in.
+     */
+    protected function reportedStudents(): ?int
+    {
+        return $this->deployment->heartbeats()->latest()->first()?->students;
     }
 
     /**
@@ -321,6 +449,58 @@ new #[Layout('layouts.app')] class extends Component
                 </x-card>
 
                 <x-card>
+                    <x-slot name="title">Quote details</x-slot>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                            <x-input-label for="hosting_mode" :value="__('Hosting mode')" />
+                            <x-select wire:model="hosting_mode" id="hosting_mode" name="hosting_mode" required class="mt-1 block w-full">
+                                @foreach (Licence::HOSTING_MODES as $mode)
+                                    <option value="{{ $mode }}">{{ Licence::hostingLabels()[$mode] }}</option>
+                                @endforeach
+                            </x-select>
+                            <x-input-error :messages="$errors->get('hosting_mode')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="implementation_fee" :value="__('Implementation fee')" />
+                            <x-text-input wire:model="implementation_fee" id="implementation_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="implementation_fee" placeholder="Defaults to {{ number_format(Licence::DEFAULT_IMPLEMENTATION_FEE, 2) }}" />
+                            <x-input-error :messages="$errors->get('implementation_fee')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="config_fee" :value="__('Configuration fee')" />
+                            <x-text-input wire:model="config_fee" id="config_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="config_fee" placeholder="Defaults to {{ number_format(Licence::DEFAULT_CONFIG_FEE, 2) }}" />
+                            <x-input-error :messages="$errors->get('config_fee')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="migration_fee" :value="__('Migration fee')" />
+                            <x-text-input wire:model="migration_fee" id="migration_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="migration_fee" placeholder="Defaults to {{ number_format(Licence::DEFAULT_MIGRATION_FEE, 2) }}" />
+                            <x-input-error :messages="$errors->get('migration_fee')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="training_admin" :value="__('Remote admin trainings')" />
+                            <x-text-input wire:model="training_admin" id="training_admin" class="mt-1 block w-full" type="number" min="0" name="training_admin" />
+                            <x-input-error :messages="$errors->get('training_admin')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="training_teacher" :value="__('Remote lecturer trainings')" />
+                            <x-text-input wire:model="training_teacher" id="training_teacher" class="mt-1 block w-full" type="number" min="0" name="training_teacher" />
+                            <x-input-error :messages="$errors->get('training_teacher')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="training_onsite" :value="__('On-site training days')" />
+                            <x-text-input wire:model="training_onsite" id="training_onsite" class="mt-1 block w-full" type="number" min="0" name="training_onsite" />
+                            <x-input-error :messages="$errors->get('training_onsite')" class="mt-2" />
+                        </div>
+                        <label class="flex cursor-pointer items-center gap-3 sm:col-span-2">
+                            <input wire:model="founding_client" type="checkbox" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                            <span class="min-w-0 flex-1">
+                                <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ __('Founding client') }}</span>
+                                <span class="block text-sm text-slate-500 dark:text-slate-400">{{ __('15% off the core annual, like the FlowEdu quote.') }}</span>
+                            </span>
+                        </label>
+                    </div>
+                </x-card>
+
+                <x-card>
                     <x-slot name="title">Annual preview</x-slot>
                     <x-slot name="actions">
                         <x-badge tone="muted">{{ $this->preview['band'] }}</x-badge>
@@ -336,6 +516,12 @@ new #[Layout('layouts.app')] class extends Component
                             <div class="flex items-center justify-between gap-4 text-sm">
                                 <dt class="text-slate-600 dark:text-slate-300">All-modules discount</dt>
                                 <dd class="font-medium text-green-700 dark:text-green-400">−{{ $this->preview['currency'] }} {{ number_format($this->preview['discount'], 2) }}</dd>
+                            </div>
+                        @endif
+                        @if ($this->preview['founding_discount'] > 0)
+                            <div class="flex items-center justify-between gap-4 text-sm">
+                                <dt class="text-slate-600 dark:text-slate-300">Founding-client discount (15% off core)</dt>
+                                <dd class="font-medium text-green-700 dark:text-green-400">−{{ $this->preview['currency'] }} {{ number_format($this->preview['founding_discount'], 2) }}</dd>
                             </div>
                         @endif
                         <div class="flex items-center justify-between gap-4 border-t border-slate-200 pt-2 text-sm dark:border-white/10">

@@ -3,13 +3,17 @@
 use App\Models\Deployment;
 use App\Models\Feature;
 use App\Models\Licence;
+use App\Models\Setting;
 use App\Models\User;
 use Database\Seeders\CatalogueSeeder;
+use Database\Seeders\SettingsSeeder;
 use Livewire\Volt\Volt;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
     $this->seed(CatalogueSeeder::class);
+    $this->seed(SettingsSeeder::class);
 });
 
 function actingSuperAdmin(): User
@@ -190,8 +194,9 @@ test('price preview honours bands and the all-modules discount', function () {
     expect($preview['currency'])->toBe('GHS');
     expect($preview['band'])->toBe('101 - 500 Students');
     expect($preview['multiplier'])->toBe(1.25);
-    expect($preview['total'])->toBe((12000.00 + 2200.00 + 1400.00) * 1.25);
+    expect($preview['total'])->toBe((12000.00 + 2200.00 + 1400.00 + 3500.00 + 800.00 + 2000.00) * 1.25);
     expect($preview['discount'])->toBe(0.0);
+    expect($preview['founding_discount'])->toBe(0.0);
 
     $allModules = array_fill_keys([
         'module_finance', 'module_staff_hr', 'module_reports', 'module_evaluations',
@@ -204,7 +209,7 @@ test('price preview honours bands and the all-modules discount', function () {
     $modulesTotal = 2200.00 + 1800.00 + 1400.00 + 1600.00 + 1500.00 + 1200.00 + 1000.00 + 900.00 + 1500.00 + 2000.00;
 
     expect($discounted['discount'])->toBe(round($modulesTotal * 0.20, 2));
-    expect($discounted['total'])->toBe(round((12000.00 + $modulesTotal - $discounted['discount']) * 1.0, 2));
+    expect($discounted['total'])->toBe(round((12000.00 + $modulesTotal - $discounted['discount'] + 3500.00 + 800.00 + 2000.00) * 1.0, 2));
 });
 
 test('licence pages render for authenticated users', function () {
@@ -372,4 +377,219 @@ test('catalogue rejects duplicate keys', function () {
         ->assertHasErrors(['key']);
 
     expect(Feature::where('key', 'module_finance')->count())->toBe(1);
+});
+
+test('pricing globals save from settings and log the diff', function () {
+    $this->actingAs(actingSuperAdmin());
+
+    Volt::test('pages.catalogue.index')
+        ->set('currency', 'GHS')
+        ->set('core_base', '15000')
+        ->set('discount_rate', '0.1')
+        ->call('saveGlobals')
+        ->assertHasNoErrors();
+
+    expect(Setting::get(Setting::CORE_BASE_ANNUAL))->toBe('15000');
+    expect(Setting::get(Setting::ALL_MODULES_DISCOUNT_RATE))->toBe('0.1');
+
+    $logged = Activity::where('description', 'settings.updated')->latest('id')->firstOrFail();
+    $properties = $logged->properties->toArray();
+
+    expect($properties['before']['core_base_annual'])->toBe('12000');
+    expect($properties['after']['core_base_annual'])->toBe('15000');
+});
+
+test('pricing globals reject an out-of-range discount rate', function () {
+    $this->actingAs(actingSuperAdmin());
+
+    Volt::test('pages.catalogue.index')
+        ->call('saveGlobals')
+        ->set('discount_rate', '1.5')
+        ->call('saveGlobals')
+        ->assertHasErrors(['discount_rate']);
+
+    expect(Setting::get(Setting::ALL_MODULES_DISCOUNT_RATE))->toBe('0.2');
+});
+
+test('preview folds hosting, one-time fees, training, and founding discount into lines', function () {
+    $preview = Licence::previewFor(['module_finance' => true], 200, null, [
+        'hosting_mode' => 'managed',
+        'implementation_fee' => 3500.00,
+        'config_fee' => 800.00,
+        'migration_fee' => 2000.00,
+        'training_admin' => 2,
+        'training_teacher' => 1,
+        'training_onsite' => 0,
+        'founding_client' => true,
+    ]);
+
+    $labels = collect($preview['lines'])->pluck('label')->all();
+
+    expect($labels)->toContain(
+        'Core annual',
+        'Financial Portal',
+        'Hosting — Managed cloud',
+        'Implementation (one-time)',
+        'Configuration (one-time)',
+        'Migration (one-time)',
+        'Remote Admin Training (2 sessions)',
+        'Remote Lecturer Training (1 sessions)',
+    );
+    expect($labels)->not->toContain('On-Site Training Days (0 days)');
+    expect($preview['founding_discount'])->toBe(round(12000.00 * 0.15, 2));
+    expect($preview['total'])->toBe(round(
+        (12000.00 - 1800.00 + 2200.00 + 1500.00 + 3500.00 + 800.00 + 2000.00 + 1200.00 + 500.00) * 1.25,
+        2
+    ));
+});
+
+test('preview validation rejects unknown hosting modes and negative fees', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->set('hosting_mode', 'mars')
+        ->set('implementation_fee', '-5')
+        ->set('training_admin', '-1')
+        ->call('save')
+        ->assertHasErrors(['hosting_mode', 'implementation_fee', 'training_admin']);
+
+    expect(Licence::where('deployment_id', $deployment->id)->count())->toBe(0);
+});
+
+test('save writes quote columns and snapshot with the full quote', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->set('modules', ['module_finance'])
+        ->set('max_students', 500)
+        ->set('starts_at', today()->toDateString())
+        ->set('expires_at', today()->addYear()->toDateString())
+        ->set('hosting_mode', 'managed')
+        ->set('implementation_fee', '100')
+        ->set('training_teacher', 3)
+        ->set('founding_client', true)
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('licences.index'));
+
+    $licence = Licence::where('deployment_id', $deployment->id)->firstOrFail();
+
+    expect($licence->hosting_mode)->toBe('managed');
+    expect($licence->training_teacher)->toBe(3);
+    expect($licence->founding_client)->toBeTrue();
+    expect((float) $licence->implementation_fee)->toBe(100.00);
+
+    $snapshot = $licence->price_snapshot;
+
+    expect((float) $snapshot['founding_discount'])->toBe(round(12000.00 * 0.15, 2));
+    expect($snapshot['quote']['hosting_mode'])->toBe('managed');
+    expect($snapshot['quote']['training_teacher'])->toBe(3);
+    expect($snapshot['quote']['founding_client'])->toBeTrue();
+    expect((float) $snapshot['quote']['implementation_fee'])->toBe(100.00);
+    expect((float) $snapshot['quote']['config_fee'])->toBe(800.00);
+});
+
+test('renew carries quote columns forward with a fresh snapshot', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    Licence::factory()->for($deployment)->create([
+        'modules' => ['module_reports' => true],
+        'hosting_mode' => 'managed',
+        'training_admin' => 2,
+        'founding_client' => true,
+        'expires_at' => today()->addDays(10),
+    ]);
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->call('renew')
+        ->assertHasNoErrors();
+
+    $renewed = Licence::where('deployment_id', $deployment->id)->latest('id')->firstOrFail();
+
+    expect($renewed->hosting_mode)->toBe('managed');
+    expect($renewed->training_admin)->toBe(2);
+    expect($renewed->founding_client)->toBeTrue();
+    expect((float) $renewed->price_snapshot['founding_discount'])->toBe(round(12000.00 * 0.15, 2));
+    expect($renewed->price_snapshot['quote']['hosting_mode'])->toBe('managed');
+});
+
+test('null cap bands from reported heartbeat students', function () {
+    $preview = Licence::previewFor(['module_finance' => true], null, 650);
+
+    expect($preview['band'])->toBe('650 students (reported)');
+    expect($preview['multiplier'])->toBe(1.5);
+    expect($preview['total'])->toBe(round((12000.00 + 2200.00 + 3500.00 + 800.00 + 2000.00) * 1.5, 2));
+});
+
+test('null cap without heartbeats stays unmultiplied', function () {
+    $preview = Licence::previewFor(['module_finance' => true], null, null);
+
+    expect($preview['band'])->toBe('No student cap');
+    expect($preview['multiplier'])->toBe(1.0);
+});
+
+test('explicit cap wins over reported students', function () {
+    $preview = Licence::previewFor(['module_finance' => true], 50, 5000);
+
+    expect($preview['band'])->toBe('1 - 100 Students');
+    expect($preview['multiplier'])->toBe(1.0);
+});
+
+test('edit page previews the reported band for uncapped licences', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    $deployment->heartbeats()->create([
+        'app_version' => '1.0.0',
+        'students' => 650,
+        'teachers' => 10,
+        'users' => 660,
+        'modules_in_use' => [],
+    ]);
+
+    $preview = Volt::test('pages.licences.edit', ['deployment' => $deployment])->get('preview');
+
+    expect($preview['band'])->toBe('650 students (reported)');
+});
+
+test('licence created and renewed logs carry old and new values', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->set('modules', ['module_finance'])
+        ->set('max_students', 500)
+        ->set('starts_at', today()->toDateString())
+        ->set('expires_at', today()->addYear()->toDateString())
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $created = Activity::where('description', 'licence.created')->latest('id')->firstOrFail();
+    $createdProperties = $created->properties->toArray();
+
+    expect($createdProperties['old'])->toBeNull();
+    expect($createdProperties['new']['modules'])->toBe(['module_finance' => true]);
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->set('max_students', 750)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $updated = Activity::where('description', 'licence.updated')->latest('id')->firstOrFail();
+    $updatedProperties = $updated->properties->toArray();
+
+    expect($updatedProperties['old']['caps'])->toBe(['max_active_students' => 500]);
+    expect($updatedProperties['new']['caps'])->toBe(['max_active_students' => 750]);
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->call('renew')
+        ->assertHasNoErrors();
+
+    $renewed = Activity::where('description', 'licence.renewed')->latest('id')->firstOrFail();
+    $renewedProperties = $renewed->properties->toArray();
+
+    expect($renewedProperties['old'])->toHaveKey('licence_id');
+    expect($renewedProperties['new'])->toHaveKey('licence_id');
+    expect($renewedProperties['new']['licence_id'])->not->toBe($renewedProperties['old']['licence_id']);
 });
