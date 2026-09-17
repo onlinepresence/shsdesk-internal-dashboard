@@ -14,7 +14,8 @@ return [
     | array for routes that need parameters.
     |
     | Future groups (Deployments, Licences, Users, Audit, Settings) slot in
-    | as new entries here without any markup changes.
+    | as new entries here without any markup changes. Items accept an
+    | optional 'can' ability — gated items hide for users lacking it.
     |
     */
 
@@ -31,6 +32,7 @@ return [
             'items' => [
                 ['label' => 'Deployments', 'route' => 'deployments.index', 'icon' => 'server'],
                 ['label' => 'Licences', 'route' => 'licences.index', 'icon' => 'key'],
+                ['label' => 'Catalogue', 'route' => 'catalogue.index', 'icon' => 'sliders', 'can' => 'manage-catalogue'],
             ],
         ],
     ],

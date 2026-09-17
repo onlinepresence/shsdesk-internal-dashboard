@@ -2,10 +2,15 @@
 
 /*
 |--------------------------------------------------------------------------
-| Licence Catalogue (mirror of FlowEdu config/licence.php)
+| Licence Catalogue (DEPRECATED as a runtime source)
 |--------------------------------------------------------------------------
 |
-| Source of truth: C:\laragon\www\college-school\config\licence.php
+| Former mirror of FlowEdu config/licence.php
+| (C:\laragon\www\college-school\config\licence.php).
+|
+| The live catalogue now lives in the `features` table. Do not read this
+| config at runtime — it is kept solely as seed fallback for
+| CatalogueSeeder.
 |
 | Feature `key`s, labels, descriptions, locked/default flags, `db_column`
 | values, prices, multipliers, and bands below are transcribed VERBATIM

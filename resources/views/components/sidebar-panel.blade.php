@@ -15,14 +15,16 @@
                 <p class="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">{{ $group['section'] }}</p>
                 <div class="space-y-1">
                     @foreach ($group['items'] as $item)
-                        <x-sidebar-link
-                            :label="$item['label']"
-                            :route="$item['route']"
-                            :icon="$item['icon'] ?? 'fallback'"
-                            :params="$item['params'] ?? []"
-                            :active="request()->routeIs($item['route'])"
-                            wire:navigate
-                        />
+                        @if (! isset($item['can']) || (auth()->check() && auth()->user()->can($item['can'])))
+                            <x-sidebar-link
+                                :label="$item['label']"
+                                :route="$item['route']"
+                                :icon="$item['icon'] ?? 'fallback'"
+                                :params="$item['params'] ?? []"
+                                :active="request()->routeIs($item['route'])"
+                                wire:navigate
+                            />
+                        @endif
                     @endforeach
                 </div>
             </div>

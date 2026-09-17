@@ -75,7 +75,7 @@ new #[Layout('layouts.app')] class extends Component
 <div class="py-12">
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6">
-            <x-section-title title="{{ $deployment->school_name }}" subtitle="Deployment detail.">
+            <x-section-title :title="$deployment->school_name" subtitle="Deployment detail.">
                 <a href="{{ route('deployments.index') }}" wire:navigate class="text-sm font-medium text-brand underline hover:text-deep dark:text-slate-200 dark:hover:text-white">
                     {{ __('Back to deployments') }}
                 </a>

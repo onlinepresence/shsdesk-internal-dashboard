@@ -1,9 +1,27 @@
 <?php
 
 use App\Models\Deployment;
+use App\Models\Feature;
 use App\Models\Licence;
 use App\Models\User;
+use Database\Seeders\CatalogueSeeder;
 use Livewire\Volt\Volt;
+use Spatie\Permission\Models\Role;
+
+beforeEach(function () {
+    $this->seed(CatalogueSeeder::class);
+});
+
+function actingSuperAdmin(): User
+{
+    $user = User::factory()->create();
+
+    Role::firstOrCreate(['name' => 'super-admin', 'guard_name' => 'web']);
+
+    $user->assignRole('super-admin');
+
+    return $user;
+}
 
 test('licence catalogue mirrors every FlowEdu feature key', function () {
     $core = config('licence-catalogue.core_features');
@@ -195,4 +213,129 @@ test('licence pages render for authenticated users', function () {
 
     $this->get(route('licences.index'))->assertOk();
     $this->get(route('licences.edit', $deployment->uuid))->assertOk();
+});
+
+test('catalogue seeder imports every feature key without touching existing rows', function () {
+    expect(Feature::count())->toBe(19);
+
+    expect(Feature::where('kind', 'core')->where('locked', true)->pluck('key')->all())
+        ->toEqualCanonicalizing(['academic_structure', 'students', 'grading', 'teacher_portal', 'student_portal']);
+
+    expect(Feature::where('kind', 'core')->where('locked', false)->pluck('key')->all())
+        ->toEqualCanonicalizing(['core_timetable', 'core_attendance', 'core_memos', 'core_impersonation']);
+
+    expect(Feature::where('kind', 'module')->pluck('key')->all())
+        ->toEqualCanonicalizing([
+            'module_finance', 'module_staff_hr', 'module_reports', 'module_evaluations',
+            'module_student_welfare', 'module_progression', 'module_system_admin',
+            'module_teacher_tools', 'module_messaging', 'module_practicum',
+        ]);
+
+    Feature::where('key', 'module_finance')->update(['label' => 'Custom label', 'active' => false]);
+
+    $this->seed(CatalogueSeeder::class);
+
+    expect(Feature::count())->toBe(19);
+    expect(Feature::where('key', 'module_finance')->firstOrFail())
+        ->label->toBe('Custom label')
+        ->active->toBeFalse();
+});
+
+test('feature keys are immutable through mass assignment', function () {
+    $feature = Feature::where('key', 'module_finance')->firstOrFail();
+
+    $feature->update(['key' => 'module_hacked', 'label' => 'Changed label']);
+
+    expect($feature->fresh()->key)->toBe('module_finance');
+    expect($feature->fresh()->label)->toBe('Changed label');
+});
+
+test('renew writes a price snapshot at grant time', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    Licence::factory()->for($deployment)->create([
+        'modules' => ['module_reports' => true],
+        'expires_at' => today()->addDays(10),
+    ]);
+
+    Feature::where('key', 'module_reports')->update(['base_price' => 9999.00]);
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->call('renew')
+        ->assertHasNoErrors();
+
+    $renewed = Licence::where('deployment_id', $deployment->id)->latest('id')->firstOrFail();
+    $snapshot = $renewed->price_snapshot;
+
+    expect($snapshot['currency'])->toBe('GHS');
+    expect($snapshot['granted_modules'])->toBe(['module_reports']);
+
+    $line = collect($snapshot['lines'])->firstWhere('label', 'Advanced Reports & Charts');
+
+    expect((float) $line['amount'])->toBe(9999.00);
+});
+
+test('inactive features are excluded from heartbeat answers', function () {
+    $deployment = Deployment::factory()->create();
+    Licence::factory()->for($deployment)->create([
+        'modules' => ['module_finance' => true],
+        'expires_at' => today()->addYear(),
+    ]);
+    $token = $deployment->createToken('heartbeat', [Deployment::HEARTBEAT_ABILITY])->plainTextToken;
+
+    Feature::where('key', 'module_finance')->update(['active' => false]);
+    Feature::where('key', 'students')->update(['active' => false]);
+
+    $response = $this->withHeaders(['Authorization' => "Bearer {$token}"])
+        ->postJson('/api/v1/heartbeats', heartbeatPayload($deployment));
+
+    $response->assertOk();
+    expect($response->json('licence.modules'))->not->toContain('module_finance', 'students');
+    expect($response->json('licence.modules'))->toContain('academic_structure');
+});
+
+test('catalogue is forbidden without the super-admin role', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get(route('catalogue.index'))->assertForbidden();
+});
+
+test('catalogue redirects guests to login', function () {
+    $this->get(route('catalogue.index'))->assertRedirect(route('login'));
+});
+
+test('catalogue renders for super-admins', function () {
+    $this->actingAs(actingSuperAdmin());
+
+    $this->get(route('catalogue.index'))
+        ->assertOk()
+        ->assertSee('Financial Portal');
+});
+
+test('catalogue updates prices and logs the change', function () {
+    $this->actingAs(actingSuperAdmin());
+    $feature = Feature::where('key', 'module_finance')->firstOrFail();
+
+    Volt::test('pages.catalogue.index')
+        ->call('edit', $feature->id)
+        ->set('label', 'Finance Plus')
+        ->set('base_price', '2400.50')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($feature->fresh()->label)->toBe('Finance Plus');
+    expect($feature->fresh()->key)->toBe('module_finance');
+    $this->assertDatabaseHas('activity_log', ['description' => 'catalogue.updated']);
+});
+
+test('catalogue toggles offerings and logs the change', function () {
+    $this->actingAs(actingSuperAdmin());
+    $feature = Feature::where('key', 'module_reports')->firstOrFail();
+
+    Volt::test('pages.catalogue.index')
+        ->call('toggleActive', $feature->id)
+        ->assertHasNoErrors();
+
+    expect($feature->fresh()->active)->toBeFalse();
+    $this->assertDatabaseHas('activity_log', ['description' => 'catalogue.toggled']);
 });

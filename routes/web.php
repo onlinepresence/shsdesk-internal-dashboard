@@ -30,6 +30,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('licences.edit');
 });
 
+Route::middleware(['auth', 'verified', 'can:manage-catalogue'])->group(function () {
+    Volt::route('catalogue', 'pages.catalogue.index')
+        ->name('catalogue.index');
+});
+
 Route::get('ui', function () {
     abort_unless(app()->isLocal(), 404);
 

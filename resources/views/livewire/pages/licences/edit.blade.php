@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Deployment;
+use App\Models\Feature;
 use App\Models\Licence;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -72,6 +73,7 @@ new #[Layout('layouts.app')] class extends Component
             'core' => array_fill_keys($validated['core'] ?? [], true),
             'modules' => array_fill_keys($validated['modules'] ?? [], true),
             'caps' => $this->maxStudents() !== null ? ['max_active_students' => $this->maxStudents()] : null,
+            'price_snapshot' => Licence::priceSnapshot(array_fill_keys($validated['modules'] ?? [], true), $this->maxStudents()),
             'starts_at' => $validated['starts_at'],
             'expires_at' => $validated['expires_at'],
             'notes' => $validated['notes'],
@@ -119,6 +121,10 @@ new #[Layout('layouts.app')] class extends Component
             'core' => $current->core ?? [],
             'modules' => $current->modules ?? [],
             'caps' => $current->caps,
+            'price_snapshot' => Licence::priceSnapshot(
+                array_fill_keys(array_keys(array_filter((array) $current->modules)), true),
+                isset($current->caps['max_active_students']) ? (int) $current->caps['max_active_students'] : null,
+            ),
             'notes' => $current->notes,
             'starts_at' => today()->toDateString(),
             'expires_at' => $base->copy()->addYear()->toDateString(),
@@ -182,46 +188,62 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
-     * Toggleable core db_column keys, optionally only catalogue defaults.
+     * Live catalogue split for the form. Only active features are
+     * offered; keys granted while active but since withdrawn are
+     * dropped on save, matching what heartbeats answer.
+     *
+     * @return array{locked: \Illuminate\Support\Collection, core: \Illuminate\Support\Collection, modules: \Illuminate\Support\Collection}
+     */
+    #[Computed]
+    public function offerings(): array
+    {
+        $features = Feature::query()->where('active', true)->orderBy('id')->get();
+
+        return [
+            'locked' => $features->where('locked', true)->where('kind', 'core')->values(),
+            'core' => $features->where('locked', false)->where('kind', 'core')->values(),
+            'modules' => $features->where('kind', 'module')->values(),
+        ];
+    }
+
+    /**
+     * Toggleable core keys, optionally only catalogue defaults.
      *
      * @return list<string>
      */
     protected function toggleableCoreKeys(bool $defaultsOnly): array
     {
-        $keys = [];
-
-        foreach (config('licence-catalogue.core_features', []) as $feature) {
-            if (($feature['locked'] ?? false) === false && (! $defaultsOnly || ($feature['default'] ?? false) === true)) {
-                $keys[] = $feature['db_column'];
-            }
-        }
-
-        return $keys;
+        return Feature::query()
+            ->where('kind', 'core')
+            ->where('locked', false)
+            ->where('active', true)
+            ->when($defaultsOnly, fn ($query) => $query->where('default_on', true))
+            ->orderBy('id')
+            ->pluck('key')
+            ->all();
     }
 
     /**
-     * Module db_column keys, optionally only catalogue defaults.
+     * Module keys, optionally only catalogue defaults.
      *
      * @return list<string>
      */
     protected function moduleKeys(bool $defaultsOnly): array
     {
-        $keys = [];
-
-        foreach (config('licence-catalogue.modules', []) as $module) {
-            if (! $defaultsOnly || ($module['default'] ?? false) === true) {
-                $keys[] = $module['db_column'];
-            }
-        }
-
-        return $keys;
+        return Feature::query()
+            ->where('kind', 'module')
+            ->where('active', true)
+            ->when($defaultsOnly, fn ($query) => $query->where('default_on', true))
+            ->orderBy('id')
+            ->pluck('key')
+            ->all();
     }
 }; ?>
 
 <div class="py-12">
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6">
-            <x-section-title title="Licence — {{ $deployment->school_name }}" subtitle="Terms in force for this deployment.">
+            <x-section-title :title="__('Licence — ').$deployment->school_name" subtitle="Terms in force for this deployment.">
                 <x-button-link :href="route('licences.index')" wire:navigate variant="tertiary">
                     {{ __('Back to licences') }}
                 </x-button-link>
@@ -232,24 +254,22 @@ new #[Layout('layouts.app')] class extends Component
                     <x-slot name="title">Core features</x-slot>
                     <div class="flex flex-col gap-3">
                         <p class="text-sm text-slate-500 dark:text-slate-400">Locked core features are always on and cannot be toggled.</p>
-                        @foreach (config('licence-catalogue.core_features') as $feature)
-                            @continue(($feature['locked'] ?? false) === false)
+                        @foreach ($this->offerings['locked'] as $feature)
                             <label class="flex cursor-pointer items-center gap-3">
-                                <input type="checkbox" disabled checked class="rounded border-slate-300 opacity-60 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" aria-label="{{ $feature['label'] }}" />
+                                <input type="checkbox" disabled checked class="rounded border-slate-300 opacity-60 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" aria-label="{{ $feature->label }}" />
                                 <span class="min-w-0 flex-1">
-                                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ $feature['label'] }}</span>
-                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $feature['description'] }}</span>
+                                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ $feature->label }}</span>
+                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $feature->description }}</span>
                                 </span>
                                 <x-badge tone="muted">Always on</x-badge>
                             </label>
                         @endforeach
-                        @foreach (config('licence-catalogue.core_features') as $feature)
-                            @continue(($feature['locked'] ?? false) === true)
+                        @foreach ($this->offerings['core'] as $feature)
                             <label class="flex cursor-pointer items-center gap-3">
-                                <input wire:model="core" type="checkbox" value="{{ $feature['db_column'] }}" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <input wire:model="core" type="checkbox" value="{{ $feature->key }}" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
                                 <span class="min-w-0 flex-1">
-                                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ $feature['label'] }}</span>
-                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $feature['description'] }}</span>
+                                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ $feature->label }}</span>
+                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $feature->description }}</span>
                                 </span>
                             </label>
                         @endforeach
@@ -260,14 +280,14 @@ new #[Layout('layouts.app')] class extends Component
                 <x-card>
                     <x-slot name="title">Modules</x-slot>
                     <div class="flex flex-col gap-3">
-                        @foreach (config('licence-catalogue.modules') as $dbKey => $module)
+                        @foreach ($this->offerings['modules'] as $module)
                             <label class="flex cursor-pointer items-center gap-3">
-                                <input wire:model="modules" type="checkbox" value="{{ $module['db_column'] }}" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <input wire:model="modules" type="checkbox" value="{{ $module->key }}" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
                                 <span class="min-w-0 flex-1">
-                                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ $module['label'] }}</span>
-                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $module['description'] }}</span>
+                                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ $module->label }}</span>
+                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $module->description }}</span>
                                 </span>
-                                <span class="shrink-0 text-sm font-medium text-slate-600 dark:text-slate-300">GHS {{ number_format($module['base_price'], 2) }}/yr</span>
+                                <span class="shrink-0 text-sm font-medium text-slate-600 dark:text-slate-300">{{ $this->preview['currency'] }} {{ number_format($module->base_price, 2) }}/yr</span>
                             </label>
                         @endforeach
                         <x-input-error :messages="$errors->get('modules')" class="mt-1" />
