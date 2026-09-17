@@ -30,6 +30,7 @@ return [
             'section' => 'Manage',
             'items' => [
                 ['label' => 'Deployments', 'route' => 'deployments.index', 'icon' => 'server'],
+                ['label' => 'Licences', 'route' => 'licences.index', 'icon' => 'key'],
             ],
         ],
     ],

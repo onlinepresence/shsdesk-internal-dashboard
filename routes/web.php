@@ -22,6 +22,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Volt::route('deployments/{deployment:uuid}', 'pages.deployments.show')
         ->name('deployments.show');
+
+    Volt::route('licences', 'pages.licences.index')
+        ->name('licences.index');
+
+    Volt::route('deployments/{deployment:uuid}/licence', 'pages.licences.edit')
+        ->name('licences.edit');
 });
 
 Route::get('ui', function () {

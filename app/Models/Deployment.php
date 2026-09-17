@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -65,6 +66,22 @@ class Deployment extends Model implements AuthenticatableContract
     public function heartbeats(): HasMany
     {
         return $this->hasMany(DeploymentHeartbeat::class)->latest();
+    }
+
+    /**
+     * Licence rows for this deployment, history preserved.
+     */
+    public function licences(): HasMany
+    {
+        return $this->hasMany(Licence::class)->latest();
+    }
+
+    /**
+     * Newest licence row — the terms currently in force.
+     */
+    public function latestLicence(): HasOne
+    {
+        return $this->hasOne(Licence::class)->latestOfMany();
     }
 
     /**

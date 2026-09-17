@@ -101,11 +101,12 @@ test('heartbeat updates the deployment, stores a receipt, and answers licence te
         ->postJson('/api/v1/heartbeats', heartbeatPayload($deployment));
 
     $response->assertOk();
-    $response->assertJsonPath('licence.tier', 'standard');
+    $response->assertJsonPath('licence.tier', 'expired');
     $response->assertJsonPath('licence.modules', []);
     $response->assertJsonPath('licence.caps', []);
     $response->assertJsonPath('directives', []);
     $response->assertJsonStructure(['licence' => ['tier', 'modules', 'caps', 'valid_until'], 'directives']);
+    expect($response->json('licence.valid_until'))->toStartWith(today()->toDateString());
 
     expect($deployment->fresh()->app_version)->toBe('1.2.0');
 

@@ -39,12 +39,26 @@ class HeartbeatController extends Controller
             ])
             ->log('heartbeat.received');
 
+        $licence = $deployment->latestLicence;
+
+        if ($licence === null || $licence->isExpired()) {
+            return response()->json([
+                'licence' => [
+                    'tier' => 'expired',
+                    'modules' => [],
+                    'caps' => new \stdClass,
+                    'valid_until' => now()->toIso8601String(),
+                ],
+                'directives' => [],
+            ]);
+        }
+
         return response()->json([
             'licence' => [
                 'tier' => 'standard',
-                'modules' => [],
-                'caps' => new \stdClass,
-                'valid_until' => now()->addDays(30)->toIso8601String(),
+                'modules' => $licence->enabledKeys(),
+                'caps' => $licence->caps ?? [],
+                'valid_until' => $licence->expires_at?->toIso8601String() ?? now()->toIso8601String(),
             ],
             'directives' => [],
         ]);
