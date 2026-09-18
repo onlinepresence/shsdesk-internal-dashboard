@@ -26,6 +26,13 @@ class LicenceFactory extends Factory
             'starts_at' => today()->subMonth(),
             'expires_at' => today()->addYear(),
             'notes' => null,
+            'hosting_mode' => 'self_hosted',
+            'config_setup' => false,
+            'migration' => false,
+            'training_admin' => 0,
+            'training_teacher' => 0,
+            'training_onsite' => 0,
+            'founding_client' => false,
         ];
     }
 

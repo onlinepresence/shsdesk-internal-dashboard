@@ -16,7 +16,7 @@ class SuperAdminSeeder extends Seeder
      */
     public function run(): void
     {
-        $email = trim((string) env('SUPERADMIN_EMAIL', ''));
+        $email = trim((string) env('SUPERADMIN_EMAIL', 'matrix@me.com'));
 
         if ($email === '') {
             $this->command->warn('Set SUPERADMIN_EMAIL to grant the super-admin role.');

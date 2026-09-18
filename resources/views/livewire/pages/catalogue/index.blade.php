@@ -35,24 +35,54 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?string $currency = null;
 
-    public $core_base = null;
+    public $bundle_rate = null;
 
-    public $discount_rate = null;
+    public $bundle_threshold = null;
 
-    /** @var list<array{min: mixed, max: mixed, multiplier: mixed, label: ?string}> */
-    public array $bands = [];
+    public $founding_rate = null;
+
+    /** @var list<array{key: string, label: string, core_upfront: mixed, core_renewal: mixed, multiplier: mixed}> */
+    public array $core_rows = [];
+
+    public $hosting_self = null;
+
+    public $hosting_managed = null;
+
+    public $hosting_none = null;
+
+    public $config_fee = null;
+
+    public $migration_fee = null;
+
+    public $training_admin = null;
+
+    public $training_teacher = null;
+
+    public $training_onsite = null;
 
     public function mount(): void
     {
         $this->currency = Setting::get(Setting::CURRENCY, 'GHS');
-        $this->core_base = Setting::get(Setting::CORE_BASE_ANNUAL);
-        $this->discount_rate = Setting::get(Setting::ALL_MODULES_DISCOUNT_RATE);
-        $this->bands = array_map(fn (array $band): array => [
-            'min' => $band['min'] ?? null,
-            'max' => $band['max'] ?? null,
-            'multiplier' => $band['multiplier'] ?? null,
-            'label' => $band['label'] ?? null,
-        ], Setting::studentBands());
+        $this->bundle_rate = Setting::get(Setting::BUNDLE_DISCOUNT_RATE);
+        $this->bundle_threshold = Setting::get(Setting::BUNDLE_THRESHOLD);
+        $this->founding_rate = Setting::get(Setting::FOUNDING_DISCOUNT_RATE);
+        $this->core_rows = array_values(array_filter(
+            array_map(fn (array $band): ?array => empty($band['custom']) ? [
+                'key' => $band['key'],
+                'label' => $band['label'],
+                'core_upfront' => $band['core_upfront'],
+                'core_renewal' => $band['core_renewal'],
+                'multiplier' => $band['multiplier'],
+            ] : null, Setting::corePricing())
+        ));
+        $this->hosting_self = Setting::get(Setting::HOSTING_SELF_HOSTED_FEE);
+        $this->hosting_managed = Setting::get(Setting::HOSTING_MANAGED_FEE);
+        $this->hosting_none = Setting::get(Setting::HOSTING_NONE_FEE);
+        $this->config_fee = Setting::get(Setting::CONFIG_SETUP_FEE);
+        $this->migration_fee = Setting::get(Setting::MIGRATION_FEE);
+        $this->training_admin = Setting::get(Setting::TRAINING_ADMIN_RATE);
+        $this->training_teacher = Setting::get(Setting::TRAINING_TEACHER_RATE);
+        $this->training_onsite = Setting::get(Setting::TRAINING_ONSITE_RATE);
     }
 
     #[Computed]
@@ -210,66 +240,99 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
-     * Persist pricing globals. Everything the annual preview needs beyond
-     * per-feature prices lives here, editable without touching config.
+     * Persist live pricing globals. Everything the quote preview needs
+     * beyond per-feature prices lives here, editable without touching
+     * config. Band ranges stay fixed; only figures change.
      */
     public function saveGlobals(): void
     {
-        foreach ($this->bands as $index => $band) {
-            if (($band['max'] ?? null) === '') {
-                $this->bands[$index]['max'] = null;
-            }
-        }
-
         $validated = $this->validate([
             'currency' => ['required', 'string', 'max:10'],
-            'core_base' => ['required', 'numeric', 'min:0'],
-            'discount_rate' => ['required', 'numeric', 'min:0', 'max:1'],
-            'bands' => ['required', 'array', 'min:1'],
-            'bands.*.min' => ['required', 'integer', 'min:0'],
-            'bands.*.max' => ['nullable', 'integer', 'min:0'],
-            'bands.*.multiplier' => ['required', 'numeric', 'min:0'],
-            'bands.*.label' => ['required', 'string', 'max:255'],
+            'bundle_rate' => ['required', 'numeric', 'min:0', 'max:1'],
+            'bundle_threshold' => ['required', 'integer', 'min:1'],
+            'founding_rate' => ['required', 'numeric', 'min:0', 'max:1'],
+            'core_rows' => ['required', 'array', 'size:4'],
+            'core_rows.*.key' => ['required', 'string'],
+            'core_rows.*.core_upfront' => ['required', 'numeric', 'min:0'],
+            'core_rows.*.core_renewal' => ['required', 'numeric', 'min:0'],
+            'core_rows.*.multiplier' => ['required', 'numeric', 'min:0'],
+            'hosting_self' => ['required', 'numeric', 'min:0'],
+            'hosting_managed' => ['required', 'numeric', 'min:0'],
+            'hosting_none' => ['required', 'numeric', 'min:0'],
+            'config_fee' => ['required', 'numeric', 'min:0'],
+            'migration_fee' => ['required', 'numeric', 'min:0'],
+            'training_admin' => ['required', 'numeric', 'min:0'],
+            'training_teacher' => ['required', 'numeric', 'min:0'],
+            'training_onsite' => ['required', 'numeric', 'min:0'],
         ]);
 
-        foreach ($validated['bands'] as $index => $band) {
-            if ($band['max'] !== null && $band['max'] < $band['min']) {
-                $this->addError("bands.{$index}.max", __('The band maximum must be at least its minimum.'));
-
-                return;
-            }
-        }
-
-        $before = [
-            'currency' => Setting::get(Setting::CURRENCY),
-            'core_base_annual' => Setting::get(Setting::CORE_BASE_ANNUAL),
-            'all_modules_discount_rate' => Setting::get(Setting::ALL_MODULES_DISCOUNT_RATE),
-            'student_bands' => Setting::studentBands(),
-        ];
+        $before = $this->globalsSnapshot();
 
         Setting::set(Setting::CURRENCY, $validated['currency']);
-        Setting::set(Setting::CORE_BASE_ANNUAL, (string) round((float) $validated['core_base'], 2));
-        Setting::set(Setting::ALL_MODULES_DISCOUNT_RATE, (string) $validated['discount_rate']);
-        Setting::set(Setting::STUDENT_BANDS, json_encode(array_map(fn (array $band): array => [
-            'min' => (int) $band['min'],
-            'max' => $band['max'] === null ? null : (int) $band['max'],
-            'multiplier' => (float) $band['multiplier'],
-            'label' => $band['label'],
-        ], $validated['bands'])));
-
-        $after = [
-            'currency' => Setting::get(Setting::CURRENCY),
-            'core_base_annual' => Setting::get(Setting::CORE_BASE_ANNUAL),
-            'all_modules_discount_rate' => Setting::get(Setting::ALL_MODULES_DISCOUNT_RATE),
-            'student_bands' => Setting::studentBands(),
-        ];
+        Setting::set(Setting::BUNDLE_DISCOUNT_RATE, (string) $validated['bundle_rate']);
+        Setting::set(Setting::BUNDLE_THRESHOLD, (string) $validated['bundle_threshold']);
+        Setting::set(Setting::FOUNDING_DISCOUNT_RATE, (string) $validated['founding_rate']);
+        Setting::set(Setting::CORE_PRICING, json_encode($this->mergeCoreRows($validated['core_rows'])));
+        Setting::set(Setting::HOSTING_SELF_HOSTED_FEE, (string) round((float) $validated['hosting_self'], 2));
+        Setting::set(Setting::HOSTING_MANAGED_FEE, (string) round((float) $validated['hosting_managed'], 2));
+        Setting::set(Setting::HOSTING_NONE_FEE, (string) round((float) $validated['hosting_none'], 2));
+        Setting::set(Setting::CONFIG_SETUP_FEE, (string) round((float) $validated['config_fee'], 2));
+        Setting::set(Setting::MIGRATION_FEE, (string) round((float) $validated['migration_fee'], 2));
+        Setting::set(Setting::TRAINING_ADMIN_RATE, (string) round((float) $validated['training_admin'], 2));
+        Setting::set(Setting::TRAINING_TEACHER_RATE, (string) round((float) $validated['training_teacher'], 2));
+        Setting::set(Setting::TRAINING_ONSITE_RATE, (string) round((float) $validated['training_onsite'], 2));
 
         activity('catalogue')
             ->causedBy(Auth::user())
-            ->withProperties(['before' => $before, 'after' => $after])
+            ->withProperties(['before' => $before, 'after' => $this->globalsSnapshot()])
             ->log('settings.updated');
 
         $this->dispatch('toast', message: __('Pricing globals saved.'));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function globalsSnapshot(): array
+    {
+        return [
+            'currency' => Setting::get(Setting::CURRENCY),
+            'bundle_discount_rate' => Setting::get(Setting::BUNDLE_DISCOUNT_RATE),
+            'bundle_threshold' => Setting::get(Setting::BUNDLE_THRESHOLD),
+            'founding_discount_rate' => Setting::get(Setting::FOUNDING_DISCOUNT_RATE),
+            'core_pricing' => Setting::corePricing(),
+            'hosting_self_hosted_fee' => Setting::get(Setting::HOSTING_SELF_HOSTED_FEE),
+            'hosting_managed_fee' => Setting::get(Setting::HOSTING_MANAGED_FEE),
+            'hosting_none_fee' => Setting::get(Setting::HOSTING_NONE_FEE),
+            'config_setup_fee' => Setting::get(Setting::CONFIG_SETUP_FEE),
+            'migration_fee' => Setting::get(Setting::MIGRATION_FEE),
+            'training_admin_rate' => Setting::get(Setting::TRAINING_ADMIN_RATE),
+            'training_teacher_rate' => Setting::get(Setting::TRAINING_TEACHER_RATE),
+            'training_onsite_rate' => Setting::get(Setting::TRAINING_ONSITE_RATE),
+        ];
+    }
+
+    /**
+     * Merge edited figures back onto the stored bands, preserving keys,
+     * labels, ranges, and the custom-quote band untouched.
+     *
+     * @param  list<array{key: string, core_upfront: mixed, core_renewal: mixed, multiplier: mixed}>  $rows
+     */
+    protected function mergeCoreRows(array $rows): array
+    {
+        $stored = Setting::corePricing();
+        $edited = collect($rows)->keyBy('key');
+
+        return array_map(fn (array $band): array => $edited->has($band['key']) && empty($band['custom']) ? [
+            'key' => $band['key'],
+            'label' => $band['label'],
+            'min' => $band['min'],
+            'max' => $band['max'],
+            'core_upfront' => round((float) $edited[$band['key']]['core_upfront'], 2),
+            'core_renewal' => round((float) $edited[$band['key']]['core_renewal'], 2),
+            'multiplier' => (float) $edited[$band['key']]['multiplier'],
+            'custom' => false,
+        ] : $band, $stored);
     }
 }; ?>
 
@@ -292,7 +355,7 @@ new #[Layout('layouts.app')] class extends Component
 
             <div x-show="tab === 'features'" role="tabpanel" id="panel-features" aria-labelledby="tab-features">
             <x-card>
-                <x-table loading-except="create, edit, cancelEdit, saveGlobals, addBand, removeBand">
+                <x-table loading-except="create, edit, cancelEdit, saveGlobals">
                     <x-table.head>
                         <x-table.row :hover="false">
                             <x-table.heading>Feature</x-table.heading>
@@ -345,81 +408,114 @@ new #[Layout('layouts.app')] class extends Component
             </div>
 
             <div x-show="tab === 'globals'" role="tabpanel" id="panel-globals" aria-labelledby="tab-globals" style="display: none;">
-            <x-card>
-                <x-slot name="title">Pricing globals</x-slot>
-                <div class="flex flex-col gap-4">
-                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <form wire:submit="saveGlobals" class="flex flex-col gap-6">
+                <x-card>
+                    <x-slot name="title">Currency &amp; discounts</x-slot>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
                             <x-input-label for="currency" :value="__('Currency')" />
                             <x-text-input wire:model="currency" id="currency" class="mt-1 block w-full" type="text" name="currency" required maxlength="10" />
                             <x-input-error :messages="$errors->get('currency')" class="mt-2" />
                         </div>
                         <div>
-                            <x-input-label for="core_base" :value="__('Core base annual')" />
-                            <x-text-input wire:model="core_base" id="core_base" class="mt-1 block w-full" type="number" min="0" step="0.01" name="core_base" required />
-                            <x-input-error :messages="$errors->get('core_base')" class="mt-2" />
+                            <x-input-label for="founding_rate" :value="__('Founding discount rate (0–1)')" />
+                            <x-text-input wire:model="founding_rate" id="founding_rate" class="mt-1 block w-full" type="number" min="0" max="1" step="0.01" name="founding_rate" required />
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Off the core only, upfront and renewal.</p>
+                            <x-input-error :messages="$errors->get('founding_rate')" class="mt-2" />
                         </div>
                         <div>
-                            <x-input-label for="discount_rate" :value="__('All-modules discount rate (0–1)')" />
-                            <x-text-input wire:model="discount_rate" id="discount_rate" class="mt-1 block w-full" type="number" min="0" max="1" step="0.01" name="discount_rate" required />
-                            <x-input-error :messages="$errors->get('discount_rate')" class="mt-2" />
+                            <x-input-label for="bundle_rate" :value="__('Bundle discount rate (0–1)')" />
+                            <x-text-input wire:model="bundle_rate" id="bundle_rate" class="mt-1 block w-full" type="number" min="0" max="1" step="0.01" name="bundle_rate" required />
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Off modules from the threshold count up.</p>
+                            <x-input-error :messages="$errors->get('bundle_rate')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="bundle_threshold" :value="__('Bundle threshold (modules)')" />
+                            <x-text-input wire:model="bundle_threshold" id="bundle_threshold" class="mt-1 block w-full" type="number" min="1" name="bundle_threshold" required />
+                            <x-input-error :messages="$errors->get('bundle_threshold')" class="mt-2" />
                         </div>
                     </div>
-                    <div x-data="{ bands: $wire.entangle('bands') }">
-                        <x-input-label :value="__('Student bands')" />
-                        <div class="mt-1 flex flex-col gap-2" wire:ignore>
-                            <template x-for="(band, index) in bands" :key="index">
-                                <div class="grid grid-cols-2 items-start gap-2 sm:grid-cols-[1fr_1fr_1fr_2fr_auto]">
-                                    <div>
-                                        <x-text-input x-model="band.min" class="block w-full" type="number" min="0" placeholder="Min" aria-label="Band minimum students" />
-                                    </div>
-                                    <div>
-                                        <x-text-input x-model="band.max" class="block w-full" type="number" min="0" placeholder="Max (blank = open)" aria-label="Band maximum students" />
-                                    </div>
-                                    <div>
-                                        <x-text-input x-model="band.multiplier" class="block w-full" type="number" min="0" step="0.01" placeholder="×" aria-label="Band multiplier" />
-                                    </div>
-                                    <div>
-                                        <x-text-input x-model="band.label" class="block w-full" type="text" placeholder="Label" aria-label="Band label" />
-                                    </div>
-                                    <div>
-                                        <x-tertiary-button type="button" @click="bands.splice(index, 1)" aria-label="Remove band">
-                                            {{ __('Remove') }}
-                                        </x-tertiary-button>
-                                    </div>
+                </x-card>
+
+                <x-card>
+                    <x-slot name="title">Core pricing &amp; module multipliers</x-slot>
+                    <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">Band ranges are fixed by the FlowEdu quote; only figures change here. The multiplier scales every module price. 3,500+ students is always a custom quote.</p>
+                    <div class="flex flex-col gap-4">
+                        @foreach ($core_rows as $index => $row)
+                            <fieldset class="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-4 dark:border-white/10">
+                                <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-200">{{ $row['label'] }}</legend>
+                                <div>
+                                    <x-input-label :for="'core_upfront_'.$index" :value="__('Core upfront')" />
+                                    <x-text-input wire:model="core_rows.{{ $index }}.core_upfront" :id="'core_upfront_'.$index" class="mt-1 block w-full" type="number" min="0" step="0.01" required />
+                                    <x-input-error :messages="$errors->get('core_rows.'.$index.'.core_upfront')" class="mt-2" />
                                 </div>
-                            </template>
-                        </div>
-                        <div class="mt-2 flex items-center gap-2">
-                            <x-tertiary-button type="button" @click="bands.push({min: null, max: null, multiplier: null, label: null})">
-                                {{ __('Add band') }}
-                            </x-tertiary-button>
-                            <x-input-error :messages="$errors->get('bands')" class="mt-2" />
-                        </div>
-                        @php
-                            $bandMessages = collect($errors->getMessages())
-                                ->filter(fn ($messages, $key) => str_starts_with((string) $key, 'bands.'))
-                                ->flatten()
-                                ->map(fn ($message) => preg_replace_callback('/\bbands\.(\d+)\.(\w+)/', fn ($matches) => 'Row '.((int) $matches[1] + 1).' '.str_replace('_', ' ', $matches[2]), $message));
-                        @endphp
-                        @if ($bandMessages->isNotEmpty())
-                            <x-alert tone="danger" title="Fix the band rows before saving.">
-                                <ul class="list-disc space-y-1 pl-5">
-                                    @foreach ($bandMessages as $message)
-                                        <li>{{ $message }}</li>
-                                    @endforeach
-                                </ul>
-                            </x-alert>
-                        @endif
+                                <div>
+                                    <x-input-label :for="'core_renewal_'.$index" :value="__('Core renewal')" />
+                                    <x-text-input wire:model="core_rows.{{ $index }}.core_renewal" :id="'core_renewal_'.$index" class="mt-1 block w-full" type="number" min="0" step="0.01" required />
+                                    <x-input-error :messages="$errors->get('core_rows.'.$index.'.core_renewal')" class="mt-2" />
+                                </div>
+                                <div>
+                                    <x-input-label :for="'multiplier_'.$index" :value="__('Module multiplier')" />
+                                    <x-text-input wire:model="core_rows.{{ $index }}.multiplier" :id="'multiplier_'.$index" class="mt-1 block w-full" type="number" min="0" step="0.1" required />
+                                    <x-input-error :messages="$errors->get('core_rows.'.$index.'.multiplier')" class="mt-2" />
+                                </div>
+                            </fieldset>
+                        @endforeach
                     </div>
-                    <div class="flex justify-end">
+                </x-card>
+
+                <x-card>
+                    <x-slot name="title">One-time fees &amp; training rates</x-slot>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div>
+                            <x-input-label for="hosting_self" :value="__('Hosting — self-hosted setup')" />
+                            <x-text-input wire:model="hosting_self" id="hosting_self" class="mt-1 block w-full" type="number" min="0" step="0.01" name="hosting_self" required />
+                            <x-input-error :messages="$errors->get('hosting_self')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="hosting_managed" :value="__('Hosting — managed setup')" />
+                            <x-text-input wire:model="hosting_managed" id="hosting_managed" class="mt-1 block w-full" type="number" min="0" step="0.01" name="hosting_managed" required />
+                            <x-input-error :messages="$errors->get('hosting_managed')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="hosting_none" :value="__('Hosting — none')" />
+                            <x-text-input wire:model="hosting_none" id="hosting_none" class="mt-1 block w-full" type="number" min="0" step="0.01" name="hosting_none" required />
+                            <x-input-error :messages="$errors->get('hosting_none')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="config_fee" :value="__('Configuration & data entry')" />
+                            <x-text-input wire:model="config_fee" id="config_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="config_fee" required />
+                            <x-input-error :messages="$errors->get('config_fee')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="migration_fee" :value="__('Legacy data migration')" />
+                            <x-text-input wire:model="migration_fee" id="migration_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="migration_fee" required />
+                            <x-input-error :messages="$errors->get('migration_fee')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="training_admin" :value="__('Remote admin training (each)')" />
+                            <x-text-input wire:model="training_admin" id="training_admin" class="mt-1 block w-full" type="number" min="0" step="0.01" name="training_admin" required />
+                            <x-input-error :messages="$errors->get('training_admin')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="training_teacher" :value="__('Remote lecturer training (each)')" />
+                            <x-text-input wire:model="training_teacher" id="training_teacher" class="mt-1 block w-full" type="number" min="0" step="0.01" name="training_teacher" required />
+                            <x-input-error :messages="$errors->get('training_teacher')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="training_onsite" :value="__('On-site training day')" />
+                            <x-text-input wire:model="training_onsite" id="training_onsite" class="mt-1 block w-full" type="number" min="0" step="0.01" name="training_onsite" required />
+                            <x-input-error :messages="$errors->get('training_onsite')" class="mt-2" />
+                        </div>
+                    </div>
+                    <div class="mt-4 flex justify-end">
                         <x-primary-button wire:loading.attr="disabled" wire:target="saveGlobals">
                             <span wire:loading.remove wire:target="saveGlobals">{{ __('Save globals') }}</span>
                             <span wire:loading wire:target="saveGlobals">{{ __('Saving…') }}</span>
                         </x-primary-button>
                     </div>
-                </div>
-            </x-card>
+                </x-card>
+            </form>
             </div>
 
             <div

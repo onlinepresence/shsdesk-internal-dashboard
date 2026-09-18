@@ -29,11 +29,9 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $hosting_mode = 'self_hosted';
 
-    public $implementation_fee = null;
+    public bool $config_setup = false;
 
-    public $config_fee = null;
-
-    public $migration_fee = null;
+    public bool $migration = false;
 
     public $training_admin = 0;
 
@@ -55,9 +53,8 @@ new #[Layout('layouts.app')] class extends Component
             $this->starts_at = today()->toDateString();
             $this->expires_at = today()->addYear()->toDateString();
             $this->hosting_mode = 'self_hosted';
-            $this->implementation_fee = Licence::DEFAULT_IMPLEMENTATION_FEE;
-            $this->config_fee = Licence::DEFAULT_CONFIG_FEE;
-            $this->migration_fee = Licence::DEFAULT_MIGRATION_FEE;
+            $this->config_setup = false;
+            $this->migration = false;
 
             return;
         }
@@ -69,9 +66,8 @@ new #[Layout('layouts.app')] class extends Component
         $this->expires_at = $current->expires_at?->format('Y-m-d');
         $this->notes = $current->notes;
         $this->hosting_mode = $current->hosting_mode ?? 'self_hosted';
-        $this->implementation_fee = $current->implementation_fee;
-        $this->config_fee = $current->config_fee;
-        $this->migration_fee = $current->migration_fee;
+        $this->config_setup = (bool) $current->config_setup;
+        $this->migration = (bool) $current->migration;
         $this->training_admin = $current->training_admin ?? 0;
         $this->training_teacher = $current->training_teacher ?? 0;
         $this->training_onsite = $current->training_onsite ?? 0;
@@ -79,9 +75,8 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
-     * Read-only annual preview for the current form state.
-     *
-     * @return array{currency: string, band: string, multiplier: float, lines: list<array{label: string, amount: float}>, discount: float, founding_discount: float, total: float}
+     * Read-only upfront/renewal quote for the current form state,
+     * mirroring FlowEdu's quote maths.
      */
     #[Computed]
     public function preview(): array
@@ -116,9 +111,8 @@ new #[Layout('layouts.app')] class extends Component
             'expires_at' => $validated['expires_at'],
             'notes' => $validated['notes'],
             'hosting_mode' => $validated['hosting_mode'],
-            'implementation_fee' => $this->moneyOrNull($validated['implementation_fee'] ?? null),
-            'config_fee' => $this->moneyOrNull($validated['config_fee'] ?? null),
-            'migration_fee' => $this->moneyOrNull($validated['migration_fee'] ?? null),
+            'config_setup' => (bool) ($validated['config_setup'] ?? false),
+            'migration' => (bool) ($validated['migration'] ?? false),
             'training_admin' => (int) ($validated['training_admin'] ?? 0),
             'training_teacher' => (int) ($validated['training_teacher'] ?? 0),
             'training_onsite' => (int) ($validated['training_onsite'] ?? 0),
@@ -140,7 +134,7 @@ new #[Layout('layouts.app')] class extends Component
         } else {
             $before = $current->only([
                 'core', 'modules', 'caps', 'starts_at', 'expires_at', 'notes',
-                'hosting_mode', 'implementation_fee', 'config_fee', 'migration_fee',
+                'hosting_mode', 'config_setup', 'migration',
                 'training_admin', 'training_teacher', 'training_onsite', 'founding_client',
             ]);
 
@@ -181,9 +175,8 @@ new #[Layout('layouts.app')] class extends Component
                 $this->reportedStudents(),
                 [
                     'hosting_mode' => $current->hosting_mode,
-                    'implementation_fee' => $current->implementation_fee !== null ? (float) $current->implementation_fee : null,
-                    'config_fee' => $current->config_fee !== null ? (float) $current->config_fee : null,
-                    'migration_fee' => $current->migration_fee !== null ? (float) $current->migration_fee : null,
+                    'config_setup' => (bool) $current->config_setup,
+                    'migration' => (bool) $current->migration,
                     'training_admin' => $current->training_admin ?? 0,
                     'training_teacher' => $current->training_teacher ?? 0,
                     'training_onsite' => $current->training_onsite ?? 0,
@@ -194,9 +187,8 @@ new #[Layout('layouts.app')] class extends Component
             'starts_at' => today()->toDateString(),
             'expires_at' => $base->copy()->addYear()->toDateString(),
             'hosting_mode' => $current->hosting_mode,
-            'implementation_fee' => $current->implementation_fee,
-            'config_fee' => $current->config_fee,
-            'migration_fee' => $current->migration_fee,
+            'config_setup' => (bool) $current->config_setup,
+            'migration' => (bool) $current->migration,
             'training_admin' => $current->training_admin ?? 0,
             'training_teacher' => $current->training_teacher ?? 0,
             'training_onsite' => $current->training_onsite ?? 0,
@@ -229,9 +221,8 @@ new #[Layout('layouts.app')] class extends Component
             'modules.*' => [Rule::in($this->moduleKeys(false))],
             'max_students' => ['nullable', 'integer', 'min:1'],
             'hosting_mode' => ['required', 'string', Rule::in(Licence::HOSTING_MODES)],
-            'implementation_fee' => ['nullable', 'numeric', 'min:0'],
-            'config_fee' => ['nullable', 'numeric', 'min:0'],
-            'migration_fee' => ['nullable', 'numeric', 'min:0'],
+            'config_setup' => ['boolean'],
+            'migration' => ['boolean'],
             'training_admin' => ['nullable', 'integer', 'min:0'],
             'training_teacher' => ['nullable', 'integer', 'min:0'],
             'training_onsite' => ['nullable', 'integer', 'min:0'],
@@ -252,7 +243,7 @@ new #[Layout('layouts.app')] class extends Component
 
     protected function normalizeBlanks(): void
     {
-        foreach (['starts_at', 'expires_at', 'notes', 'implementation_fee', 'config_fee', 'migration_fee'] as $field) {
+        foreach (['starts_at', 'expires_at', 'notes'] as $field) {
             if ($this->{$field} === '') {
                 $this->{$field} = null;
             }
@@ -279,32 +270,21 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
-     * Quote dimensions for the preview and snapshot, with money rounded
-     * to pesewas and counts coerced to integers.
+     * Quote dimensions for the preview and snapshot.
      *
-     * @return array{hosting_mode: ?string, implementation_fee: ?float, config_fee: ?float, migration_fee: ?float, training_admin: int, training_teacher: int, training_onsite: int, founding_client: bool}
+     * @return array{hosting_mode: ?string, config_setup: bool, migration: bool, training_admin: int, training_teacher: int, training_onsite: int, founding_client: bool}
      */
     protected function quoteInput(): array
     {
         return [
             'hosting_mode' => $this->hosting_mode,
-            'implementation_fee' => $this->moneyOrNull($this->implementation_fee),
-            'config_fee' => $this->moneyOrNull($this->config_fee),
-            'migration_fee' => $this->moneyOrNull($this->migration_fee),
+            'config_setup' => (bool) $this->config_setup,
+            'migration' => (bool) $this->migration,
             'training_admin' => (int) ($this->training_admin ?? 0),
             'training_teacher' => (int) ($this->training_teacher ?? 0),
             'training_onsite' => (int) ($this->training_onsite ?? 0),
             'founding_client' => (bool) $this->founding_client,
         ];
-    }
-
-    protected function moneyOrNull(mixed $value): ?float
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        return round((float) $value, 2);
     }
 
     /**
@@ -410,15 +390,18 @@ new #[Layout('layouts.app')] class extends Component
                     <div class="flex flex-col gap-3">
                         @foreach ($this->offerings['modules'] as $module)
                             <label class="flex cursor-pointer items-center gap-3">
-                                <input wire:model="modules" type="checkbox" value="{{ $module->key }}" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <input wire:model.live="modules" type="checkbox" value="{{ $module->key }}" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
                                 <span class="min-w-0 flex-1">
                                     <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ $module->label }}</span>
                                     <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $module->description }}</span>
                                 </span>
-                                <span class="shrink-0 text-sm font-medium text-slate-600 dark:text-slate-300">{{ $this->preview['currency'] }} {{ number_format($module->base_price, 2) }}/yr</span>
+                                <span class="shrink-0 text-sm font-medium text-slate-600 dark:text-slate-300">{{ $this->preview['currency'] }} {{ number_format($module->base_price * $this->preview['multiplier'], 2) }}</span>
                             </label>
                         @endforeach
                         <x-input-error :messages="$errors->get('modules')" class="mt-1" />
+                        @if ($this->preview['apply_bundle'])
+                            <p class="text-sm text-green-700 dark:text-green-400">{{ number_format($this->preview['bundle_discount_rate'] * 100, 0) }}% bundle discount applies ({{ count($this->preview['modules']) }} modules selected).</p>
+                        @endif
                     </div>
                 </x-card>
 
@@ -428,6 +411,7 @@ new #[Layout('layouts.app')] class extends Component
                         <div>
                             <x-input-label for="max_students" :value="__('Max active students')" />
                             <x-text-input wire:model="max_students" id="max_students" class="mt-1 block w-full" type="number" min="1" name="max_students" placeholder="No cap" />
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Empty bands from the latest heartbeat count. 3,501+ students needs a custom quote.</p>
                             <x-input-error :messages="$errors->get('max_students')" class="mt-2" />
                         </div>
                         <div>
@@ -442,7 +426,7 @@ new #[Layout('layouts.app')] class extends Component
                         </div>
                         <div class="sm:col-span-2">
                             <x-input-label for="notes" :value="__('Notes')" />
-                            <x-text-input wire:model="notes" id="notes" class="mt-1 block w-full" type="text" name="notes" placeholder="Internal notes, never sent to the school" />
+                            <x-text-input wire:model="notes" id="notes" class="mt-1 block w-full" type="text" name="notes" placeholder="{{ $this->preview['is_custom'] ? 'Custom quote — describe the manual terms for ops' : 'Internal notes, never sent to the school' }}" />
                             <x-input-error :messages="$errors->get('notes')" class="mt-2" />
                         </div>
                     </div>
@@ -454,82 +438,150 @@ new #[Layout('layouts.app')] class extends Component
                         <div>
                             <x-input-label for="hosting_mode" :value="__('Hosting mode')" />
                             <x-select wire:model="hosting_mode" id="hosting_mode" name="hosting_mode" required class="mt-1 block w-full">
-                                @foreach (Licence::HOSTING_MODES as $mode)
-                                    <option value="{{ $mode }}">{{ Licence::hostingLabels()[$mode] }}</option>
+                                @foreach (Licence::hostingOptions() as $mode => $option)
+                                    <option value="{{ $mode }}">{{ $option['label'] }} — {{ $this->preview['currency'] }} {{ number_format($option['fee'], 2) }} one-time</option>
                                 @endforeach
                             </x-select>
                             <x-input-error :messages="$errors->get('hosting_mode')" class="mt-2" />
                         </div>
-                        <div>
-                            <x-input-label for="implementation_fee" :value="__('Implementation fee')" />
-                            <x-text-input wire:model="implementation_fee" id="implementation_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="implementation_fee" placeholder="Defaults to {{ number_format(Licence::DEFAULT_IMPLEMENTATION_FEE, 2) }}" />
-                            <x-input-error :messages="$errors->get('implementation_fee')" class="mt-2" />
+                        <div class="flex flex-col gap-3">
+                            <label class="flex cursor-pointer items-center gap-3">
+                                <input wire:model="config_setup" type="checkbox" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <span class="min-w-0 flex-1">
+                                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ __('System configuration & data entry') }}</span>
+                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format(Licence::configSetupFee(), 2) }} one-time</span>
+                                </span>
+                            </label>
+                            <label class="flex cursor-pointer items-center gap-3">
+                                <input wire:model="migration" type="checkbox" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <span class="min-w-0 flex-1">
+                                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ __('Legacy data migration') }}</span>
+                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format(Licence::migrationFee(), 2) }} one-time</span>
+                                </span>
+                            </label>
                         </div>
-                        <div>
-                            <x-input-label for="config_fee" :value="__('Configuration fee')" />
-                            <x-text-input wire:model="config_fee" id="config_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="config_fee" placeholder="Defaults to {{ number_format(Licence::DEFAULT_CONFIG_FEE, 2) }}" />
-                            <x-input-error :messages="$errors->get('config_fee')" class="mt-2" />
-                        </div>
-                        <div>
-                            <x-input-label for="migration_fee" :value="__('Migration fee')" />
-                            <x-text-input wire:model="migration_fee" id="migration_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="migration_fee" placeholder="Defaults to {{ number_format(Licence::DEFAULT_MIGRATION_FEE, 2) }}" />
-                            <x-input-error :messages="$errors->get('migration_fee')" class="mt-2" />
-                        </div>
+                        @php($rates = Licence::trainingRates())
                         <div>
                             <x-input-label for="training_admin" :value="__('Remote admin trainings')" />
                             <x-text-input wire:model="training_admin" id="training_admin" class="mt-1 block w-full" type="number" min="0" name="training_admin" />
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format($rates['admin'], 2) }} per session</p>
                             <x-input-error :messages="$errors->get('training_admin')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="training_teacher" :value="__('Remote lecturer trainings')" />
                             <x-text-input wire:model="training_teacher" id="training_teacher" class="mt-1 block w-full" type="number" min="0" name="training_teacher" />
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format($rates['teacher'], 2) }} per session</p>
                             <x-input-error :messages="$errors->get('training_teacher')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="training_onsite" :value="__('On-site training days')" />
                             <x-text-input wire:model="training_onsite" id="training_onsite" class="mt-1 block w-full" type="number" min="0" name="training_onsite" />
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format($rates['onsite'], 2) }} per day</p>
                             <x-input-error :messages="$errors->get('training_onsite')" class="mt-2" />
                         </div>
                         <label class="flex cursor-pointer items-center gap-3 sm:col-span-2">
                             <input wire:model="founding_client" type="checkbox" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
                             <span class="min-w-0 flex-1">
                                 <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ __('Founding client') }}</span>
-                                <span class="block text-sm text-slate-500 dark:text-slate-400">{{ __('15% off the core annual, like the FlowEdu quote.') }}</span>
+                                <span class="block text-sm text-slate-500 dark:text-slate-400">{{ number_format($this->preview['founding_discount_rate'] * 100, 0) }}% off the core, upfront and renewal.</span>
                             </span>
                         </label>
                     </div>
                 </x-card>
 
                 <x-card>
-                    <x-slot name="title">Annual preview</x-slot>
+                    <x-slot name="title">Quote preview</x-slot>
                     <x-slot name="actions">
-                        <x-badge tone="muted">{{ $this->preview['band'] }}</x-badge>
+                        <x-badge tone="muted">{{ $this->preview['band_label'] }}</x-badge>
                     </x-slot>
-                    <dl class="flex flex-col gap-2">
-                        @foreach ($this->preview['lines'] as $line)
-                            <div class="flex items-center justify-between gap-4 text-sm">
-                                <dt class="text-slate-600 dark:text-slate-300">{{ $line['label'] }}</dt>
-                                <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($line['amount'], 2) }}</dd>
-                            </div>
-                        @endforeach
-                        @if ($this->preview['discount'] > 0)
-                            <div class="flex items-center justify-between gap-4 text-sm">
-                                <dt class="text-slate-600 dark:text-slate-300">All-modules discount</dt>
-                                <dd class="font-medium text-green-700 dark:text-green-400">−{{ $this->preview['currency'] }} {{ number_format($this->preview['discount'], 2) }}</dd>
-                            </div>
-                        @endif
-                        @if ($this->preview['founding_discount'] > 0)
-                            <div class="flex items-center justify-between gap-4 text-sm">
-                                <dt class="text-slate-600 dark:text-slate-300">Founding-client discount (15% off core)</dt>
-                                <dd class="font-medium text-green-700 dark:text-green-400">−{{ $this->preview['currency'] }} {{ number_format($this->preview['founding_discount'], 2) }}</dd>
-                            </div>
-                        @endif
-                        <div class="flex items-center justify-between gap-4 border-t border-slate-200 pt-2 text-sm dark:border-white/10">
-                            <dt class="font-semibold text-slate-900 dark:text-white">Total × {{ $this->preview['multiplier'] }}</dt>
-                            <dd class="font-semibold text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['total'], 2) }}</dd>
+                    @if ($this->preview['is_custom'])
+                        <x-alert tone="warn" title="Custom quote required" :dismissible="false">
+                            This school is past the auto-priced bands, so there is no automatic total.
+                            Record the agreed terms in Notes so ops can quote manually.
+                        </x-alert>
+                    @else
+                        <div class="flex flex-col gap-6">
+                            <section aria-label="Upfront total">
+                                <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Upfront</h3>
+                                <dl class="mt-2 flex flex-col gap-2">
+                                    <div class="flex items-center justify-between gap-4 text-sm">
+                                        <dt class="text-slate-600 dark:text-slate-300">Core upfront</dt>
+                                        <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['core_upfront_final'], 2) }}</dd>
+                                    </div>
+                                    @if ($this->preview['founding_discount_upfront'] > 0)
+                                        <div class="flex items-center justify-between gap-4 text-sm">
+                                            <dt class="text-slate-600 dark:text-slate-300">Founding-client discount ({{ number_format($this->preview['founding_discount_rate'] * 100, 0) }}% off core)</dt>
+                                            <dd class="font-medium text-green-700 dark:text-green-400">−{{ $this->preview['currency'] }} {{ number_format($this->preview['founding_discount_upfront'], 2) }}</dd>
+                                        </div>
+                                    @endif
+                                    @foreach ($this->preview['modules'] as $module)
+                                        <div class="flex items-center justify-between gap-4 text-sm">
+                                            <dt class="text-slate-600 dark:text-slate-300">{{ $module['label'] }}</dt>
+                                            <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($module['onetime'], 2) }}</dd>
+                                        </div>
+                                    @endforeach
+                                    @if ($this->preview['bundle_discount_onetime'] > 0)
+                                        <div class="flex items-center justify-between gap-4 text-sm">
+                                            <dt class="text-slate-600 dark:text-slate-300">Bundle discount ({{ number_format($this->preview['bundle_discount_rate'] * 100, 0) }}% off modules)</dt>
+                                            <dd class="font-medium text-green-700 dark:text-green-400">−{{ $this->preview['currency'] }} {{ number_format($this->preview['bundle_discount_onetime'], 2) }}</dd>
+                                        </div>
+                                    @endif
+                                    <div class="flex items-center justify-between gap-4 text-sm">
+                                        <dt class="text-slate-600 dark:text-slate-300">Hosting — {{ $this->preview['hosting_label'] }}</dt>
+                                        <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['hosting_setup_fee'], 2) }}</dd>
+                                    </div>
+                                    @foreach ($this->preview['addons'] as $addon)
+                                        <div class="flex items-center justify-between gap-4 text-sm">
+                                            <dt class="text-slate-600 dark:text-slate-300">{{ $addon['label'] }}</dt>
+                                            <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($addon['price'], 2) }}</dd>
+                                        </div>
+                                    @endforeach
+                                    @foreach ($this->preview['trainings'] as $training)
+                                        <div class="flex items-center justify-between gap-4 text-sm">
+                                            <dt class="text-slate-600 dark:text-slate-300">{{ $training['label'] }}</dt>
+                                            <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($training['price'], 2) }}</dd>
+                                        </div>
+                                    @endforeach
+                                    <div class="flex items-center justify-between gap-4 border-t border-slate-200 pt-2 text-sm dark:border-white/10">
+                                        <dt class="font-semibold text-slate-900 dark:text-white">Upfront total</dt>
+                                        <dd class="font-semibold text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['upfront_total'], 2) }}</dd>
+                                    </div>
+                                </dl>
+                            </section>
+                            <section aria-label="Renewal total">
+                                <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Renewal</h3>
+                                <dl class="mt-2 flex flex-col gap-2">
+                                    <div class="flex items-center justify-between gap-4 text-sm">
+                                        <dt class="text-slate-600 dark:text-slate-300">Core renewal</dt>
+                                        <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['core_renewal_final'], 2) }}</dd>
+                                    </div>
+                                    @if ($this->preview['founding_discount_renew'] > 0)
+                                        <div class="flex items-center justify-between gap-4 text-sm">
+                                            <dt class="text-slate-600 dark:text-slate-300">Founding-client discount ({{ number_format($this->preview['founding_discount_rate'] * 100, 0) }}% off core)</dt>
+                                            <dd class="font-medium text-green-700 dark:text-green-400">−{{ $this->preview['currency'] }} {{ number_format($this->preview['founding_discount_renew'], 2) }}</dd>
+                                        </div>
+                                    @endif
+                                    @foreach ($this->preview['modules'] as $module)
+                                        <div class="flex items-center justify-between gap-4 text-sm">
+                                            <dt class="text-slate-600 dark:text-slate-300">{{ $module['label'] }} renewal</dt>
+                                            <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($module['renew'], 2) }}</dd>
+                                        </div>
+                                    @endforeach
+                                    @if ($this->preview['bundle_discount_renew'] > 0)
+                                        <div class="flex items-center justify-between gap-4 text-sm">
+                                            <dt class="text-slate-600 dark:text-slate-300">Bundle discount ({{ number_format($this->preview['bundle_discount_rate'] * 100, 0) }}% off modules)</dt>
+                                            <dd class="font-medium text-green-700 dark:text-green-400">−{{ $this->preview['currency'] }} {{ number_format($this->preview['bundle_discount_renew'], 2) }}</dd>
+                                        </div>
+                                    @endif
+                                    <div class="flex items-center justify-between gap-4 border-t border-slate-200 pt-2 text-sm dark:border-white/10">
+                                        <dt class="font-semibold text-slate-900 dark:text-white">Renewal total</dt>
+                                        <dd class="font-semibold text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['renew_total'], 2) }}</dd>
+                                    </div>
+                                </dl>
+                            </section>
                         </div>
-                    </dl>
-                    <x-slot name="footer">Read-only estimate from the catalogue; saving does not bill anything.</x-slot>
+                    @endif
+                    <x-slot name="footer">Read-only estimate from settings storage; saving does not bill anything.</x-slot>
                 </x-card>
 
                 <div class="flex flex-wrap items-center justify-end gap-2">

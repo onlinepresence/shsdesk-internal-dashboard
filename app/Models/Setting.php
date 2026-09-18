@@ -15,11 +15,50 @@ class Setting extends Model
 
     public const CURRENCY = 'pricing.currency';
 
-    public const CORE_BASE_ANNUAL = 'pricing.core_base_annual';
+    /**
+     * Live core pricing table (JSON list). Each band carries its key,
+     * label, student range, upfront/renewal core figures, and the module
+     * multiplier — mirroring FlowEdu's `core_pricing` (+ the matching
+     * `module_pricing.multipliers`). The 3500+ band is custom-quoted.
+     */
+    public const CORE_PRICING = 'pricing.core_pricing';
 
-    public const ALL_MODULES_DISCOUNT_RATE = 'pricing.all_modules_discount_rate';
+    /**
+     * Bundle discount off modules once the threshold count is selected.
+     */
+    public const BUNDLE_DISCOUNT_RATE = 'pricing.bundle_discount_rate';
 
-    public const STUDENT_BANDS = 'pricing.student_bands';
+    public const BUNDLE_THRESHOLD = 'pricing.bundle_threshold';
+
+    /**
+     * Founding-client discount off the core only (upfront and renewal).
+     */
+    public const FOUNDING_DISCOUNT_RATE = 'pricing.founding_discount_rate';
+
+    /**
+     * One-time hosting setup fees by mode.
+     */
+    public const HOSTING_SELF_HOSTED_FEE = 'pricing.hosting_self_hosted_fee';
+
+    public const HOSTING_MANAGED_FEE = 'pricing.hosting_managed_fee';
+
+    public const HOSTING_NONE_FEE = 'pricing.hosting_none_fee';
+
+    /**
+     * One-time implementation addons behind the config/migration booleans.
+     */
+    public const CONFIG_SETUP_FEE = 'pricing.config_setup_fee';
+
+    public const MIGRATION_FEE = 'pricing.migration_fee';
+
+    /**
+     * Per-unit training rates.
+     */
+    public const TRAINING_ADMIN_RATE = 'pricing.training_admin_rate';
+
+    public const TRAINING_TEACHER_RATE = 'pricing.training_teacher_rate';
+
+    public const TRAINING_ONSITE_RATE = 'pricing.training_onsite_rate';
 
     public static function get(string $key, ?string $default = null): ?string
     {
@@ -36,27 +75,52 @@ class Setting extends Model
         );
     }
 
-    /**
-     * Student bands for price previews, highest band last.
-     *
-     * @return list<array{min: int, max: ?int, multiplier: float, label: string}>
-     */
-    public static function studentBands(): array
+    public static function getFloat(string $key, float $default = 0.0): float
     {
-        $decoded = json_decode((string) static::get(static::STUDENT_BANDS, '[]'), true);
+        $value = static::get($key);
+
+        return $value === null || $value === '' ? $default : (float) $value;
+    }
+
+    public static function getInt(string $key, int $default = 0): int
+    {
+        $value = static::get($key);
+
+        return $value === null || $value === '' ? $default : (int) $value;
+    }
+
+    /**
+     * Live core pricing bands, custom-quote band last.
+     *
+     * @return list<array{key: string, label: string, min: int, max: ?int, core_upfront: float, core_renewal: float, multiplier: float, custom: bool}>
+     */
+    public static function corePricing(): array
+    {
+        $decoded = json_decode((string) static::get(static::CORE_PRICING, '[]'), true);
 
         if (! is_array($decoded)) {
             return [];
         }
 
-        $valid = array_filter($decoded, fn (mixed $band): bool => is_array($band)
-            && isset($band['min'], $band['multiplier'], $band['label']));
+        $bands = [];
 
-        return array_values(array_map(fn (array $band): array => [
-            'min' => (int) $band['min'],
-            'max' => isset($band['max']) ? (int) $band['max'] : null,
-            'multiplier' => (float) $band['multiplier'],
-            'label' => (string) $band['label'],
-        ], $valid));
+        foreach (array_values($decoded) as $band) {
+            if (! is_array($band) || ! isset($band['key'], $band['label'])) {
+                continue;
+            }
+
+            $bands[] = [
+                'key' => (string) $band['key'],
+                'label' => (string) $band['label'],
+                'min' => (int) ($band['min'] ?? 0),
+                'max' => array_key_exists('max', $band) && $band['max'] !== null ? (int) $band['max'] : null,
+                'core_upfront' => (float) ($band['core_upfront'] ?? 0),
+                'core_renewal' => (float) ($band['core_renewal'] ?? 0),
+                'multiplier' => (float) ($band['multiplier'] ?? 1),
+                'custom' => (bool) ($band['custom'] ?? false),
+            ];
+        }
+
+        return $bands;
     }
 }

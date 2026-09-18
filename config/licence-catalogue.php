@@ -6,11 +6,13 @@
 |--------------------------------------------------------------------------
 |
 | Former mirror of FlowEdu config/licence.php
-| (C:\laragon\www\college-school\config\licence.php).
+| (C:\laragon\www\college-school\config\licence.php) plus the hardcoded
+| figures from FlowEdu's app/Services/QuoteCalculationService.php.
 |
-| The live catalogue now lives in the `features` table. Do not read this
-| config at runtime — it is kept solely as seed fallback for
-| CatalogueSeeder.
+| The live catalogue now lives in the `features` table and the live
+| pricing in settings storage. Do not read this config at runtime — it
+| is kept solely as seed fallback for CatalogueSeeder and
+| SettingsSeeder.
 |
 | Feature `key`s, labels, descriptions, locked/default flags, `db_column`
 | values, prices, multipliers, and bands below are transcribed VERBATIM
@@ -21,63 +23,15 @@
 | `student_cap_mode`, `cache_ttl`) — ControlDesk never enforces caps
 | locally, it only records and reports licence terms.
 |
+| Also deliberately NOT mirrored: the STALE `pricing` +
+| `student_pricing_bands` system from FlowEdu's config (base_annual
+| 12000, 20%-all-modules, 1-100/101-500/501-1000/1000+ bands). Nothing
+| live in FlowEdu reads it; the live maths is `core_pricing` +
+| `module_pricing` + `bundle_discount` + `founding_client_discount`.
+|
 */
 
 return [
-
-    /*
-    |--------------------------------------------------------------------------
-    | Pricing Configuration
-    |--------------------------------------------------------------------------
-    */
-    'pricing' => [
-        'currency' => 'GHS',
-        'core' => [
-            'base_annual' => 12000.00,
-            'implementation_fee' => 3500.00,
-        ],
-        'hosting' => [
-            'annual_fee' => 1500.00,
-        ],
-        'modules' => [
-            'base_annual_price' => 3000.00,
-        ],
-        'discounts' => [
-            'all_modules_rate' => 0.20, // 20% discount if all modules are enabled
-        ],
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Student Band Multipliers
-    |--------------------------------------------------------------------------
-    */
-    'student_pricing_bands' => [
-        'tier_1' => [
-            'min' => 1,
-            'max' => 100,
-            'multiplier' => 1.0,
-            'label' => '1 - 100 Students',
-        ],
-        'tier_2' => [
-            'min' => 101,
-            'max' => 500,
-            'multiplier' => 1.25,
-            'label' => '101 - 500 Students',
-        ],
-        'tier_3' => [
-            'min' => 501,
-            'max' => 1000,
-            'multiplier' => 1.5,
-            'label' => '501 - 1000 Students',
-        ],
-        'tier_4' => [
-            'min' => 1001,
-            'max' => null,
-            'multiplier' => 2.0,
-            'label' => 'Over 1000 Students',
-        ],
-    ],
 
     /*
     |--------------------------------------------------------------------------
@@ -275,4 +229,36 @@ return [
 
     'bundle_discount' => 0.12, // 12% discount (matches the 10-15% range)
     'founding_client_discount' => 0.15, // 15% discount (matches the 10-15% range)
+
+    /*
+    |--------------------------------------------------------------------------
+    | Live quote figures (seed fallback only)
+    |--------------------------------------------------------------------------
+    |
+    | Transcribed from FlowEdu's QuoteCalculationService, where these are
+    | hardcoded: hosting setup fees by mode (one-time), implementation
+    | addon fees behind the config_setup / migration booleans, per-unit
+    | training rates, and the module-count threshold for the bundle
+    | discount. Live reads come from settings storage; this array only
+    | seeds fresh installs via SettingsSeeder.
+    |
+    */
+    'currency' => 'GHS',
+
+    'bundle_threshold' => 4,
+
+    'fees' => [
+        'hosting' => [
+            'self_hosted' => 1200.00,
+            'managed' => 1600.00,
+            'none' => 0.00,
+        ],
+        'config_setup' => 800.00,
+        'migration' => 2000.00,
+        'training' => [
+            'admin' => 600.00,
+            'teacher' => 500.00,
+            'onsite' => 1500.00,
+        ],
+    ],
 ];
