@@ -280,15 +280,24 @@ new #[Layout('layouts.app')] class extends Component
 
 <div class="py-12">
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
-        <div class="mb-6 flex flex-col gap-6">
-            <x-section-title title="Catalogue" subtitle="Offerings served from the database. Keys are immutable.">
-                <x-primary-button type="button" wire:click="create">
-                    {{ __('New feature') }}
-                </x-primary-button>
-            </x-section-title>
+        <div class="mb-6 flex flex-col gap-6" x-data="{ tab: 'features' }">
+            <x-section-title title="Catalogue" subtitle="Offerings served from the database. Keys are immutable." />
 
+            <div class="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 dark:border-white/10">
+                <div class="-mb-px flex gap-6" role="tablist" aria-label="Catalogue sections">
+                    <button type="button" role="tab" id="tab-features" aria-controls="panel-features" :aria-selected="tab === 'features'" @click="tab = 'features'" :class="tab === 'features' ? 'border-brand text-brand dark:border-accent dark:text-white' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-slate-200'" class="rounded-t-md border-b-2 px-1 pb-2 text-sm font-medium transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand dark:focus:ring-accent">{{ __('Features') }}</button>
+                    <button type="button" role="tab" id="tab-globals" aria-controls="panel-globals" :aria-selected="tab === 'globals'" @click="tab = 'globals'" :class="tab === 'globals' ? 'border-brand text-brand dark:border-accent dark:text-white' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-slate-200'" class="rounded-t-md border-b-2 px-1 pb-2 text-sm font-medium transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand dark:focus:ring-accent">{{ __('Pricing globals') }}</button>
+                </div>
+                <div class="pb-2" x-show="tab === 'features'">
+                    <x-primary-button type="button" wire:click="create" x-data="" x-on:click="$dispatch('open-modal', 'feature-form')">
+                        {{ __('New feature') }}
+                    </x-primary-button>
+                </div>
+            </div>
+
+            <div x-show="tab === 'features'" role="tabpanel" id="panel-features" aria-labelledby="tab-features">
             <x-card>
-                <x-table>
+                <x-table loading-except="create, edit, cancelEdit, saveGlobals, addBand, removeBand">
                     <x-table.head>
                         <x-table.row :hover="false">
                             <x-table.heading>Feature</x-table.heading>
@@ -338,7 +347,9 @@ new #[Layout('layouts.app')] class extends Component
                     {{ $this->features->links() }}
                 </div>
             </x-card>
+            </div>
 
+            <div x-show="tab === 'globals'" role="tabpanel" id="panel-globals" aria-labelledby="tab-globals" style="display: none;">
             <x-card>
                 <x-slot name="title">Pricing globals</x-slot>
                 <div class="flex flex-col gap-4">
@@ -403,6 +414,7 @@ new #[Layout('layouts.app')] class extends Component
                     </div>
                 </div>
             </x-card>
+            </div>
 
             <div
                 x-on:open-feature-form.window="$dispatch('open-modal', 'feature-form')"
