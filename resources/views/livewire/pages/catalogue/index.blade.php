@@ -151,8 +151,9 @@ new #[Layout('layouts.app')] class extends Component
             activity('catalogue')
                 ->performedOn($feature)
                 ->causedBy(Auth::user())
-                ->withProperties(['old' => null, 'new' => $feature->fresh()->only(['key', 'label', 'description', 'kind', 'locked', 'default_on', 'active', 'base_price', 'renewal_base'])])
                 ->log('catalogue.created');
+
+            $this->dispatch('toast', message: __('Feature created.'));
 
             $this->dispatch('close-feature-form');
             $this->cancelEdit();
@@ -183,6 +184,8 @@ new #[Layout('layouts.app')] class extends Component
             ->withProperties(['before' => $before, 'after' => $feature->fresh()->only(['label', 'description', 'base_price', 'renewal_base'])])
             ->log('catalogue.updated');
 
+        $this->dispatch('toast', message: __('Feature updated.'));
+
         $this->dispatch('close-feature-form');
         $this->cancelEdit();
     }
@@ -202,18 +205,8 @@ new #[Layout('layouts.app')] class extends Component
             ->causedBy(Auth::user())
             ->withProperties(['active' => $feature->active])
             ->log('catalogue.toggled');
-    }
 
-    public function addBand(): void
-    {
-        $this->bands[] = ['min' => null, 'max' => null, 'multiplier' => null, 'label' => null];
-    }
-
-    public function removeBand(int $index): void
-    {
-        unset($this->bands[$index]);
-
-        $this->bands = array_values($this->bands);
+        $this->dispatch('toast', message: $feature->active ? __('Feature activated.') : __('Feature deactivated.'));
     }
 
     /**
@@ -275,6 +268,8 @@ new #[Layout('layouts.app')] class extends Component
             ->causedBy(Auth::user())
             ->withProperties(['before' => $before, 'after' => $after])
             ->log('settings.updated');
+
+        $this->dispatch('toast', message: __('Pricing globals saved.'));
     }
 }; ?>
 
@@ -370,41 +365,52 @@ new #[Layout('layouts.app')] class extends Component
                             <x-input-error :messages="$errors->get('discount_rate')" class="mt-2" />
                         </div>
                     </div>
-                    <div>
+                    <div x-data="{ bands: $wire.entangle('bands') }">
                         <x-input-label :value="__('Student bands')" />
-                        <div class="mt-1 flex flex-col gap-2">
-                            @foreach ($bands as $index => $band)
+                        <div class="mt-1 flex flex-col gap-2" wire:ignore>
+                            <template x-for="(band, index) in bands" :key="index">
                                 <div class="grid grid-cols-2 items-start gap-2 sm:grid-cols-[1fr_1fr_1fr_2fr_auto]">
                                     <div>
-                                        <x-text-input wire:model="bands.{{ $index }}.min" class="block w-full" type="number" min="0" placeholder="Min" aria-label="Band minimum students" />
-                                        <x-input-error :messages="$errors->get('bands.'.$index.'.min')" class="mt-2" />
+                                        <x-text-input x-model="band.min" class="block w-full" type="number" min="0" placeholder="Min" aria-label="Band minimum students" />
                                     </div>
                                     <div>
-                                        <x-text-input wire:model="bands.{{ $index }}.max" class="block w-full" type="number" min="0" placeholder="Max (blank = open)" aria-label="Band maximum students" />
-                                        <x-input-error :messages="$errors->get('bands.'.$index.'.max')" class="mt-2" />
+                                        <x-text-input x-model="band.max" class="block w-full" type="number" min="0" placeholder="Max (blank = open)" aria-label="Band maximum students" />
                                     </div>
                                     <div>
-                                        <x-text-input wire:model="bands.{{ $index }}.multiplier" class="block w-full" type="number" min="0" step="0.01" placeholder="×" aria-label="Band multiplier" />
-                                        <x-input-error :messages="$errors->get('bands.'.$index.'.multiplier')" class="mt-2" />
+                                        <x-text-input x-model="band.multiplier" class="block w-full" type="number" min="0" step="0.01" placeholder="×" aria-label="Band multiplier" />
                                     </div>
                                     <div>
-                                        <x-text-input wire:model="bands.{{ $index }}.label" class="block w-full" type="text" placeholder="Label" aria-label="Band label" />
-                                        <x-input-error :messages="$errors->get('bands.'.$index.'.label')" class="mt-2" />
+                                        <x-text-input x-model="band.label" class="block w-full" type="text" placeholder="Label" aria-label="Band label" />
                                     </div>
                                     <div>
-                                        <x-tertiary-button type="button" wire:click="removeBand({{ $index }})" aria-label="Remove band">
+                                        <x-tertiary-button type="button" @click="bands.splice(index, 1)" aria-label="Remove band">
                                             {{ __('Remove') }}
                                         </x-tertiary-button>
                                     </div>
                                 </div>
-                            @endforeach
+                            </template>
                         </div>
                         <div class="mt-2 flex items-center gap-2">
-                            <x-tertiary-button type="button" wire:click="addBand">
+                            <x-tertiary-button type="button" @click="bands.push({min: null, max: null, multiplier: null, label: null})">
                                 {{ __('Add band') }}
                             </x-tertiary-button>
                             <x-input-error :messages="$errors->get('bands')" class="mt-2" />
                         </div>
+                        @php
+                            $bandMessages = collect($errors->getMessages())
+                                ->filter(fn ($messages, $key) => str_starts_with((string) $key, 'bands.'))
+                                ->flatten()
+                                ->map(fn ($message) => preg_replace_callback('/\bbands\.(\d+)\.(\w+)/', fn ($matches) => 'Row '.((int) $matches[1] + 1).' '.str_replace('_', ' ', $matches[2]), $message));
+                        @endphp
+                        @if ($bandMessages->isNotEmpty())
+                            <x-alert tone="danger" title="Fix the band rows before saving.">
+                                <ul class="list-disc space-y-1 pl-5">
+                                    @foreach ($bandMessages as $message)
+                                        <li>{{ $message }}</li>
+                                    @endforeach
+                                </ul>
+                            </x-alert>
+                        @endif
                     </div>
                     <div class="flex justify-end">
                         <x-primary-button wire:loading.attr="disabled" wire:target="saveGlobals">
@@ -496,6 +502,33 @@ new #[Layout('layouts.app')] class extends Component
                         </div>
                     </form>
                 </x-modal>
+            </div>
+
+            <div
+                x-data="{
+                    toasts: [],
+                    tones: {
+                        success: 'bg-green-500',
+                        danger: 'bg-red-500',
+                        info: 'bg-brand',
+                    },
+                    pushToast(message, tone) {
+                        const id = Date.now() + Math.random();
+                        this.toasts.push({ id, message, tone });
+                        setTimeout(() => { this.toasts = this.toasts.filter((toast) => toast.id !== id); }, 4500);
+                    },
+                }"
+                x-on:toast.window="pushToast($event.detail.message, $event.detail.tone || 'success')"
+                class="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2"
+                aria-live="polite"
+            >
+                <template x-for="toast in toasts" :key="toast.id">
+                    <div class="pointer-events-auto flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-lg dark:border-white/10 dark:bg-deep" role="status">
+                        <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="tones[toast.tone] || tones.success" aria-hidden="true"></span>
+                        <p class="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200" x-text="toast.message"></p>
+                        <button type="button" @click="toasts = toasts.filter((item) => item.id !== toast.id)" aria-label="Dismiss notification" class="shrink-0 rounded-md p-1 text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand dark:text-slate-500 dark:hover:text-slate-300 dark:focus:ring-accent">×</button>
+                    </div>
+                </template>
             </div>
         </div>
     </div>

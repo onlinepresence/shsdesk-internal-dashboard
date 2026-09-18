@@ -317,6 +317,24 @@ test('catalogue renders for super-admins', function () {
         ->assertSee('Financial Portal');
 });
 
+test('settings seeder imports FlowEdu pricing defaults without touching existing rows', function () {
+    expect(Setting::get(Setting::CURRENCY))->toBe('GHS');
+    expect(Setting::get(Setting::CORE_BASE_ANNUAL))->toBe('12000');
+    expect(Setting::get(Setting::ALL_MODULES_DISCOUNT_RATE))->toBe('0.2');
+    expect(Setting::studentBands())->toBe([
+        ['min' => 1, 'max' => 100, 'multiplier' => 1.0, 'label' => '1 - 100 Students'],
+        ['min' => 101, 'max' => 500, 'multiplier' => 1.25, 'label' => '101 - 500 Students'],
+        ['min' => 501, 'max' => 1000, 'multiplier' => 1.5, 'label' => '501 - 1000 Students'],
+        ['min' => 1001, 'max' => null, 'multiplier' => 2.0, 'label' => 'Over 1000 Students'],
+    ]);
+
+    Setting::set(Setting::CORE_BASE_ANNUAL, '99999');
+
+    $this->seed(SettingsSeeder::class);
+
+    expect(Setting::get(Setting::CORE_BASE_ANNUAL))->toBe('99999');
+});
+
 test('catalogue updates prices and logs the change', function () {
     $this->actingAs(actingSuperAdmin());
     $feature = Feature::where('key', 'module_finance')->firstOrFail();
@@ -326,7 +344,8 @@ test('catalogue updates prices and logs the change', function () {
         ->set('label', 'Finance Plus')
         ->set('base_price', '2400.50')
         ->call('save')
-        ->assertHasNoErrors();
+        ->assertHasNoErrors()
+        ->assertDispatched('toast');
 
     expect($feature->fresh()->label)->toBe('Finance Plus');
     expect($feature->fresh()->key)->toBe('module_finance');
@@ -339,7 +358,8 @@ test('catalogue toggles offerings and logs the change', function () {
 
     Volt::test('pages.catalogue.index')
         ->call('toggleActive', $feature->id)
-        ->assertHasNoErrors();
+        ->assertHasNoErrors()
+        ->assertDispatched('toast');
 
     expect($feature->fresh()->active)->toBeFalse();
     $this->assertDatabaseHas('activity_log', ['description' => 'catalogue.toggled']);
@@ -356,7 +376,8 @@ test('catalogue creates a feature and logs it', function () {
         ->set('base_price', '1800')
         ->set('renewal_base', '450')
         ->call('save')
-        ->assertHasNoErrors();
+        ->assertHasNoErrors()
+        ->assertDispatched('toast');
 
     $this->assertDatabaseHas('features', [
         'key' => 'module_custom',
@@ -387,7 +408,8 @@ test('pricing globals save from settings and log the diff', function () {
         ->set('core_base', '15000')
         ->set('discount_rate', '0.1')
         ->call('saveGlobals')
-        ->assertHasNoErrors();
+        ->assertHasNoErrors()
+        ->assertDispatched('toast');
 
     expect(Setting::get(Setting::CORE_BASE_ANNUAL))->toBe('15000');
     expect(Setting::get(Setting::ALL_MODULES_DISCOUNT_RATE))->toBe('0.1');

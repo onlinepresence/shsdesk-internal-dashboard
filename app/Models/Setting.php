@@ -49,7 +49,14 @@ class Setting extends Model
             return [];
         }
 
-        return array_values(array_filter($decoded, fn (mixed $band): bool => is_array($band)
-            && isset($band['min'], $band['multiplier'], $band['label'])));
+        $valid = array_filter($decoded, fn (mixed $band): bool => is_array($band)
+            && isset($band['min'], $band['multiplier'], $band['label']));
+
+        return array_values(array_map(fn (array $band): array => [
+            'min' => (int) $band['min'],
+            'max' => isset($band['max']) ? (int) $band['max'] : null,
+            'multiplier' => (float) $band['multiplier'],
+            'label' => (string) $band['label'],
+        ], $valid));
     }
 }
