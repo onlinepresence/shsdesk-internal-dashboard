@@ -7,6 +7,7 @@ $iconComponents = [
     'user' => 'lucide-user',
     'server' => 'lucide-server',
     'key' => 'lucide-key-round',
+    'receipt' => 'lucide-receipt',
     'sliders' => 'lucide-sliders-horizontal',
 ];
 

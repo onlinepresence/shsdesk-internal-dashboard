@@ -103,3 +103,43 @@ test('invoice page hides other deployments invoices', function () {
     $this->get(route('licences.invoices.show', [$deployment->uuid, $invoice->id]))
         ->assertNotFound();
 });
+
+test('invoices index lists every bill for authenticated users', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    $invoice = Invoice::factory()->for($deployment)->create(['invoice_no' => 'FE-20250101-0001']);
+
+    $this->get(route('invoices.index'))
+        ->assertOk()
+        ->assertSee('FE-20250101-0001')
+        ->assertSee($deployment->school_name);
+});
+
+test('invoices index filters to one deployment bills', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    $other = Deployment::factory()->create();
+    Invoice::factory()->for($deployment)->create(['invoice_no' => 'FE-20250101-0001']);
+    Invoice::factory()->for($other)->create(['invoice_no' => 'FE-20250101-0002']);
+
+    $this->get(route('invoices.index', ['deployment' => $deployment->uuid]))
+        ->assertOk()
+        ->assertSee('FE-20250101-0001')
+        ->assertDontSee('FE-20250101-0002');
+
+    Volt::test('pages.invoices.index')
+        ->set('deployment', $other->uuid)
+        ->assertSee('FE-20250101-0002')
+        ->assertDontSee('FE-20250101-0001');
+});
+
+test('licence page links to their bills and all bills', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+
+    $this->get(route('licences.edit', $deployment->uuid))
+        ->assertOk()
+        ->assertSee(route('invoices.index', ['deployment' => $deployment->uuid]), false)
+        ->assertSee('Their bills')
+        ->assertSee('All bills');
+});

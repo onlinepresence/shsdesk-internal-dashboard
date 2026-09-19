@@ -507,6 +507,12 @@ new #[Layout('layouts.app')] class extends Component
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6">
             <x-section-title :title="__('Licence — ').$deployment->school_name" subtitle="Terms in force for this deployment.">
+                <x-button-link :href="route('invoices.index', ['deployment' => $deployment->uuid])" wire:navigate variant="tertiary">
+                    {{ __('Their bills') }}
+                </x-button-link>
+                <x-button-link :href="route('invoices.index')" wire:navigate variant="tertiary">
+                    {{ __('All bills') }}
+                </x-button-link>
                 <x-button-link :href="route('licences.index')" wire:navigate variant="tertiary">
                     {{ __('Back to licences') }}
                 </x-button-link>

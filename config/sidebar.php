@@ -32,6 +32,7 @@ return [
             'items' => [
                 ['label' => 'Deployments', 'route' => 'deployments.index', 'icon' => 'server'],
                 ['label' => 'Licences', 'route' => 'licences.index', 'icon' => 'key'],
+                ['label' => 'Invoices', 'route' => 'invoices.index', 'icon' => 'receipt'],
                 ['label' => 'Catalogue', 'route' => 'catalogue.index', 'icon' => 'sliders', 'can' => 'manage-catalogue'],
             ],
         ],

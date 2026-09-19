@@ -28,6 +28,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Volt::route('licences', 'pages.licences.index')
         ->name('licences.index');
 
+    Volt::route('invoices', 'pages.invoices.index')
+        ->name('invoices.index');
+
     Volt::route('deployments/{deployment:uuid}/licence', 'pages.licences.edit')
         ->name('licences.edit');
 
