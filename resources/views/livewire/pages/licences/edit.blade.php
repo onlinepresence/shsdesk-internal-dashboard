@@ -350,6 +350,56 @@ new #[Layout('layouts.app')] class extends Component
         return $this->latestInvoice !== null;
     }
 
+    /**
+     * Pending invoice blocking a fresh one, if any. Only one unpaid
+     * bill may be open per deployment at a time.
+     */
+    #[Computed]
+    public function pendingInvoice(): ?Invoice
+    {
+        return $this->deployment->invoices()->where('status', Invoice::STATUS_PENDING)->latest()->first();
+    }
+
+    /**
+     * Whether the priced form inputs differ from the saved licence.
+     * Invoices bill the saved terms, so a dirty quote must be saved
+     * before a new invoice can go out. Non-priced fields (core
+     * toggles, dates, notes) never block invoicing.
+     */
+    #[Computed]
+    public function quoteDirty(): bool
+    {
+        $current = $this->deployment->latestLicence;
+
+        if ($current === null) {
+            return true;
+        }
+
+        $savedModules = array_keys(array_filter((array) $current->modules));
+        $formModules = array_values($this->modules);
+
+        sort($savedModules);
+        sort($formModules);
+
+        if ($savedModules !== $formModules) {
+            return true;
+        }
+
+        $savedCap = isset($current->caps['max_active_students']) ? (int) $current->caps['max_active_students'] : null;
+
+        if ($savedCap !== $this->maxStudents()) {
+            return true;
+        }
+
+        return ($current->hosting_mode ?? 'self_hosted') !== $this->hosting_mode
+            || (bool) $current->config_setup !== (bool) $this->config_setup
+            || (bool) $current->migration !== (bool) $this->migration
+            || (int) ($current->training_admin ?? 0) !== (int) ($this->training_admin ?? 0)
+            || (int) ($current->training_teacher ?? 0) !== (int) ($this->training_teacher ?? 0)
+            || (int) ($current->training_onsite ?? 0) !== (int) ($this->training_onsite ?? 0)
+            || (bool) $current->founding_client !== (bool) $this->founding_client;
+    }
+
     protected function normalizeBlanks(): void
     {
         foreach (['starts_at', 'expires_at', 'notes'] as $field) {
@@ -429,6 +479,18 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function createInvoice(): void
     {
+        if ($this->pendingInvoice !== null) {
+            $this->addError('invoice', __('Settle or delete pending invoice :no before generating a new one.', ['no' => $this->pendingInvoice->invoice_no]));
+
+            return;
+        }
+
+        if ($this->quoteDirty) {
+            $this->addError('invoice', __('Save the licence before generating an invoice — invoices bill the saved terms.'));
+
+            return;
+        }
+
         if ($this->next_payment_at === '') {
             $this->next_payment_at = null;
         }
@@ -464,7 +526,7 @@ new #[Layout('layouts.app')] class extends Component
             'invoice_no' => 'FE-'.$invoice->created_at->format('Ymd').'-'.str_pad((string) $invoice->id, 4, '0', STR_PAD_LEFT),
         ]);
 
-        unset($this->latestInvoice, $this->quoteLocked);
+        unset($this->latestInvoice, $this->quoteLocked, $this->pendingInvoice);
 
         $this->dispatch('close-invoice-form');
         $this->dispatch('open-invoice', url: route('licences.invoices.show', [$this->deployment->uuid, $invoice->id]));
@@ -812,10 +874,25 @@ new #[Layout('layouts.app')] class extends Component
                                 <span wire:loading.remove wire:target="save">{{ __('Save licence') }}</span>
                                 <span wire:loading wire:target="save">{{ __('Saving…') }}</span>
                             </x-primary-button>
-                            <x-secondary-button type="button" wire:click="openInvoiceModal" wire:loading.attr="disabled" class="w-full justify-center">
-                                <span wire:loading.remove wire:target="openInvoiceModal">{{ __('Create invoice') }}</span>
-                                <span wire:loading wire:target="openInvoiceModal">{{ __('Preparing…') }}</span>
-                            </x-secondary-button>
+                            @if ($this->pendingInvoice)
+                                <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-400/20 dark:bg-amber-500/10">
+                                    <p class="text-sm font-medium text-amber-800 dark:text-amber-200">Pending invoice {{ $this->pendingInvoice->invoice_no }}</p>
+                                    <p class="mt-1 text-sm text-amber-700 dark:text-amber-300/80">Settle or delete it before generating a new one.</p>
+                                    <x-button-link :href="route('licences.invoices.show', [$deployment->uuid, $this->pendingInvoice->id])" variant="tertiary" class="mt-2">
+                                        {{ __('View invoice') }}
+                                    </x-button-link>
+                                </div>
+                            @elseif ($this->quoteDirty)
+                                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5">
+                                    <p class="text-sm font-medium text-slate-700 dark:text-slate-200">Unsaved quote changes</p>
+                                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Save the licence first — invoices bill the saved terms.</p>
+                                </div>
+                            @else
+                                <x-secondary-button type="button" wire:click="openInvoiceModal" wire:loading.attr="disabled" class="w-full justify-center">
+                                    <span wire:loading.remove wire:target="openInvoiceModal">{{ __('Create invoice') }}</span>
+                                    <span wire:loading wire:target="openInvoiceModal">{{ __('Preparing…') }}</span>
+                                </x-secondary-button>
+                            @endif
                             @if ($deployment->latestLicence !== null)
                                 <x-secondary-button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'confirm-licence-renew')" class="w-full justify-center">
                                     {{ __('Renew licence') }}
@@ -978,6 +1055,7 @@ new #[Layout('layouts.app')] class extends Component
                             <span wire:loading wire:target="createInvoice">{{ __('Generating…') }}</span>
                         </x-primary-button>
                     </div>
+                    <x-input-error :messages="$errors->get('invoice')" class="mt-2" />
                 </form>
             </x-modal>
         </div>

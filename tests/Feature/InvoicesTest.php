@@ -40,6 +40,10 @@ test('create invoice stores the quote and opens the printable invoice', function
     Volt::test('pages.licences.edit', ['deployment' => $deployment])
         ->set('modules', ['module_finance'])
         ->set('max_students', 500)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment->refresh()])
         ->call('openInvoiceModal')
         ->call('createInvoice')
         ->assertHasNoErrors()
@@ -153,6 +157,7 @@ test('licence page links to their invoices', function () {
 test('invoice modal prefills due dates and accepts an override', function () {
     $this->actingAs(User::factory()->create());
     $deployment = Deployment::factory()->create();
+    Licence::factory()->for($deployment)->create();
 
     $component = Volt::test('pages.licences.edit', ['deployment' => $deployment])
         ->call('openInvoiceModal');
@@ -175,7 +180,7 @@ test('pending invoice can be deleted and the deletion is logged', function () {
     $invoice = Invoice::factory()->for($deployment)->create(['invoice_no' => 'FE-20250101-0001']);
 
     Volt::test('pages.invoices.index')
-        ->call('confirmDelete', $invoice->id)
+        ->set('deletingId', $invoice->id)
         ->call('delete')
         ->assertHasNoErrors();
 
@@ -189,10 +194,120 @@ test('non-pending invoices cannot be deleted', function () {
     $invoice = Invoice::factory()->for($deployment)->create(['status' => Invoice::STATUS_PAID]);
 
     Volt::test('pages.invoices.index')
-        ->call('confirmDelete', $invoice->id)
+        ->set('deletingId', $invoice->id)
+        ->call('delete')
         ->assertHasErrors(['invoice']);
 
     expect(Invoice::find($invoice->id))->not->toBeNull();
+});
+
+test('a fresh invoice is blocked while a pending one exists', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    Licence::factory()->for($deployment)->create(['caps' => ['max_active_students' => 500]]);
+
+    $component = Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->call('openInvoiceModal')
+        ->call('createInvoice')
+        ->assertHasNoErrors();
+
+    expect(Invoice::where('deployment_id', $deployment->id)->count())->toBe(1);
+
+    $component->call('createInvoice')->assertHasErrors(['invoice']);
+
+    expect(Invoice::where('deployment_id', $deployment->id)->count())->toBe(1);
+});
+
+test('a dirty quote blocks invoicing until saved', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    Licence::factory()->for($deployment)->create(['modules' => ['module_reports' => true]]);
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->set('modules', ['module_reports', 'module_finance'])
+        ->call('openInvoiceModal')
+        ->call('createInvoice')
+        ->assertHasErrors(['invoice']);
+
+    expect(Invoice::where('deployment_id', $deployment->id)->count())->toBe(0);
+});
+
+test('an unsaved first quote blocks invoicing until saved', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->set('modules', ['module_finance'])
+        ->call('openInvoiceModal')
+        ->call('createInvoice')
+        ->assertHasErrors(['invoice']);
+
+    expect(Invoice::where('deployment_id', $deployment->id)->count())->toBe(0);
+});
+
+test('non-priced changes do not block invoicing', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    Licence::factory()->for($deployment)->create();
+
+    Volt::test('pages.licences.edit', ['deployment' => $deployment])
+        ->set('notes', 'Just a note')
+        ->call('openInvoiceModal')
+        ->call('createInvoice')
+        ->assertHasNoErrors();
+
+    expect(Invoice::where('deployment_id', $deployment->id)->count())->toBe(1);
+});
+
+test('pending invoice dates can be edited and the edit is logged', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    $invoice = Invoice::factory()->for($deployment)->create([
+        'due_at' => today()->addDays(30)->toDateString(),
+    ]);
+
+    Volt::test('pages.invoices.index')
+        ->call('beginEdit', $invoice->id)
+        ->set('due_at', today()->addDays(10)->toDateString())
+        ->set('next_payment_at', today()->addYear()->toDateString())
+        ->call('updateInvoice')
+        ->assertHasNoErrors();
+
+    $fresh = $invoice->fresh();
+
+    expect($fresh->due_at->toDateString())->toBe(today()->addDays(10)->toDateString());
+    expect($fresh->next_payment_at->toDateString())->toBe(today()->addYear()->toDateString());
+    $this->assertDatabaseHas('activity_log', ['description' => 'invoice.updated']);
+});
+
+test('non-pending invoice dates cannot be edited', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    $invoice = Invoice::factory()->for($deployment)->create([
+        'status' => Invoice::STATUS_PAID,
+        'due_at' => today()->addDays(30)->toDateString(),
+    ]);
+
+    Volt::test('pages.invoices.index')
+        ->call('beginEdit', $invoice->id)
+        ->set('due_at', today()->addDays(10)->toDateString())
+        ->call('updateInvoice')
+        ->assertHasErrors(['invoice']);
+
+    expect($invoice->fresh()->due_at->toDateString())->toBe(today()->addDays(30)->toDateString());
+});
+
+test('index exposes icon actions per status', function () {
+    $this->actingAs(User::factory()->create());
+    $deployment = Deployment::factory()->create();
+    Invoice::factory()->for($deployment)->create(['status' => Invoice::STATUS_PAID]);
+
+    $this->get(route('invoices.index'))
+        ->assertOk()
+        ->assertSee('aria-label="View invoice"', false)
+        ->assertSee('aria-label="Print invoice"', false)
+        ->assertDontSee('aria-label="Edit invoice"', false)
+        ->assertDontSee('aria-label="Delete invoice"', false);
 });
 
 test('invoice settings save from catalogue and log the change', function () {
