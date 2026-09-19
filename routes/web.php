@@ -2,6 +2,7 @@
 
 use App\Models\Deployment;
 use App\Models\Invoice;
+use App\Models\Setting;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
@@ -37,12 +38,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('deployments/{deployment:uuid}/licence/invoices/{invoice}', function (Deployment $deployment, Invoice $invoice) {
         abort_unless($invoice->deployment_id === $deployment->id, 404);
 
+        $issuer = $invoice->issuer ?? [];
+
         return view('licences.invoice', [
             'deployment' => $deployment,
             'pricing' => $invoice->pricing ?? [],
             'contact' => $invoice->contact ?? ['college_name' => $deployment->school_name],
             'invoiceNo' => $invoice->invoice_no ?? 'FE-DRAFT',
             'issuedAt' => $invoice->created_at,
+            'docTitle' => $invoice->doc_title ?? Setting::get(Setting::INVOICE_DOC_TITLE, 'Proforma Invoice'),
+            'issuer' => [
+                'company' => $issuer['company'] ?? Setting::get(Setting::INVOICE_COMPANY, 'Matme Inc.'),
+                'department' => $issuer['department'] ?? Setting::get(Setting::INVOICE_DEPARTMENT),
+                'email' => $issuer['email'] ?? Setting::get(Setting::INVOICE_EMAIL),
+                'phone' => $issuer['phone'] ?? Setting::get(Setting::INVOICE_PHONE),
+                'location' => $issuer['location'] ?? Setting::get(Setting::INVOICE_LOCATION),
+            ],
+            'dueAt' => $invoice->due_at,
+            'nextPaymentAt' => $invoice->next_payment_at,
         ]);
     })->name('licences.invoices.show');
 });

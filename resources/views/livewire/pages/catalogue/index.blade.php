@@ -60,6 +60,20 @@ new #[Layout('layouts.app')] class extends Component
 
     public $training_onsite = null;
 
+    public ?string $doc_title = null;
+
+    public ?string $company = null;
+
+    public ?string $department = null;
+
+    public ?string $invoice_email = null;
+
+    public ?string $invoice_phone = null;
+
+    public ?string $invoice_location = null;
+
+    public $due_days = null;
+
     public function mount(): void
     {
         $this->currency = Setting::get(Setting::CURRENCY, 'GHS');
@@ -83,6 +97,13 @@ new #[Layout('layouts.app')] class extends Component
         $this->training_admin = Setting::get(Setting::TRAINING_ADMIN_RATE);
         $this->training_teacher = Setting::get(Setting::TRAINING_TEACHER_RATE);
         $this->training_onsite = Setting::get(Setting::TRAINING_ONSITE_RATE);
+        $this->doc_title = Setting::get(Setting::INVOICE_DOC_TITLE, 'Proforma Invoice');
+        $this->company = Setting::get(Setting::INVOICE_COMPANY, 'Matme Inc.');
+        $this->department = Setting::get(Setting::INVOICE_DEPARTMENT);
+        $this->invoice_email = Setting::get(Setting::INVOICE_EMAIL);
+        $this->invoice_phone = Setting::get(Setting::INVOICE_PHONE);
+        $this->invoice_location = Setting::get(Setting::INVOICE_LOCATION);
+        $this->due_days = Setting::get(Setting::INVOICE_DUE_DAYS, '30');
     }
 
     #[Computed]
@@ -291,6 +312,48 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
+     * Persist invoice document settings. Everything the proforma
+     * invoice needs beyond the quote itself lives here, editable
+     * without touching code. Per-invoice due dates default from
+     * due_days but stay overridable at generation time.
+     */
+    public function saveInvoiceSettings(): void
+    {
+        foreach (['department', 'invoice_location'] as $field) {
+            if ($this->{$field} === '') {
+                $this->{$field} = null;
+            }
+        }
+
+        $validated = $this->validate([
+            'doc_title' => ['required', 'string', 'max:100'],
+            'company' => ['required', 'string', 'max:255'],
+            'department' => ['nullable', 'string', 'max:255'],
+            'invoice_email' => ['required', 'email', 'max:255'],
+            'invoice_phone' => ['required', 'string', 'max:50'],
+            'invoice_location' => ['nullable', 'string', 'max:255'],
+            'due_days' => ['required', 'integer', 'min:1', 'max:365'],
+        ]);
+
+        $before = $this->invoiceSnapshot();
+
+        Setting::set(Setting::INVOICE_DOC_TITLE, $validated['doc_title']);
+        Setting::set(Setting::INVOICE_COMPANY, $validated['company']);
+        Setting::set(Setting::INVOICE_DEPARTMENT, $validated['department']);
+        Setting::set(Setting::INVOICE_EMAIL, $validated['invoice_email']);
+        Setting::set(Setting::INVOICE_PHONE, $validated['invoice_phone']);
+        Setting::set(Setting::INVOICE_LOCATION, $validated['invoice_location']);
+        Setting::set(Setting::INVOICE_DUE_DAYS, (string) $validated['due_days']);
+
+        activity('catalogue')
+            ->causedBy(Auth::user())
+            ->withProperties(['before' => $before, 'after' => $this->invoiceSnapshot()])
+            ->log('invoice-settings.updated');
+
+        $this->dispatch('toast', message: __('Invoice settings saved.'));
+    }
+
+    /**
      * @return array<string, mixed>
      */
     protected function globalsSnapshot(): array
@@ -309,6 +372,22 @@ new #[Layout('layouts.app')] class extends Component
             'training_admin_rate' => Setting::get(Setting::TRAINING_ADMIN_RATE),
             'training_teacher_rate' => Setting::get(Setting::TRAINING_TEACHER_RATE),
             'training_onsite_rate' => Setting::get(Setting::TRAINING_ONSITE_RATE),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function invoiceSnapshot(): array
+    {
+        return [
+            'doc_title' => Setting::get(Setting::INVOICE_DOC_TITLE),
+            'company' => Setting::get(Setting::INVOICE_COMPANY),
+            'department' => Setting::get(Setting::INVOICE_DEPARTMENT),
+            'email' => Setting::get(Setting::INVOICE_EMAIL),
+            'phone' => Setting::get(Setting::INVOICE_PHONE),
+            'location' => Setting::get(Setting::INVOICE_LOCATION),
+            'due_days' => Setting::get(Setting::INVOICE_DUE_DAYS),
         ];
     }
 
@@ -345,6 +424,7 @@ new #[Layout('layouts.app')] class extends Component
                 <div class="-mb-px flex gap-6" role="tablist" aria-label="Catalogue sections">
                     <button type="button" role="tab" id="tab-features" aria-controls="panel-features" :aria-selected="tab === 'features'" @click="tab = 'features'" :class="tab === 'features' ? 'border-brand text-brand dark:border-accent dark:text-white' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-slate-200'" class="rounded-t-md border-b-2 px-1 pb-2 text-sm font-medium transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand dark:focus:ring-accent">{{ __('Features') }}</button>
                     <button type="button" role="tab" id="tab-globals" aria-controls="panel-globals" :aria-selected="tab === 'globals'" @click="tab = 'globals'" :class="tab === 'globals' ? 'border-brand text-brand dark:border-accent dark:text-white' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-slate-200'" class="rounded-t-md border-b-2 px-1 pb-2 text-sm font-medium transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand dark:focus:ring-accent">{{ __('Pricing globals') }}</button>
+                    <button type="button" role="tab" id="tab-invoice" aria-controls="panel-invoice" :aria-selected="tab === 'invoice'" @click="tab = 'invoice'" :class="tab === 'invoice' ? 'border-brand text-brand dark:border-accent dark:text-white' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-slate-200'" class="rounded-t-md border-b-2 px-1 pb-2 text-sm font-medium transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand dark:focus:ring-accent">{{ __('Invoice settings') }}</button>
                 </div>
                 <div class="pb-2" x-show="tab === 'features'">
                     <x-primary-button type="button" wire:click="create" x-data="" x-on:click="$dispatch('open-modal', 'feature-form')">
@@ -512,6 +592,66 @@ new #[Layout('layouts.app')] class extends Component
                         <x-primary-button wire:loading.attr="disabled" wire:target="saveGlobals">
                             <span wire:loading.remove wire:target="saveGlobals">{{ __('Save globals') }}</span>
                             <span wire:loading wire:target="saveGlobals">{{ __('Saving…') }}</span>
+                        </x-primary-button>
+                    </div>
+                </x-card>
+            </form>
+            </div>
+
+            <div x-show="tab === 'invoice'" role="tabpanel" id="panel-invoice" aria-labelledby="tab-invoice" style="display: none;">
+            <form wire:submit="saveInvoiceSettings" class="flex flex-col gap-6">
+                <x-card>
+                    <x-slot name="title">Document &amp; payment terms</x-slot>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                            <x-input-label for="doc_title" :value="__('Document title')" />
+                            <x-text-input wire:model="doc_title" id="doc_title" class="mt-1 block w-full" type="text" name="doc_title" required maxlength="100" />
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Printed as the invoice heading. Defaults to Proforma Invoice.</p>
+                            <x-input-error :messages="$errors->get('doc_title')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="due_days" :value="__('Default due in (days)')" />
+                            <x-text-input wire:model="due_days" id="due_days" class="mt-1 block w-full" type="number" min="1" max="365" name="due_days" required />
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Payment window from issue. Overridable per invoice.</p>
+                            <x-input-error :messages="$errors->get('due_days')" class="mt-2" />
+                        </div>
+                    </div>
+                </x-card>
+
+                <x-card>
+                    <x-slot name="title">Issuing company</x-slot>
+                    <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">Printed in the Issued By block. Each invoice keeps a snapshot, so edits here never rewrite issued invoices.</p>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                            <x-input-label for="company" :value="__('Company')" />
+                            <x-text-input wire:model="company" id="company" class="mt-1 block w-full" type="text" name="company" required maxlength="255" />
+                            <x-input-error :messages="$errors->get('company')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="department" :value="__('Department / team')" />
+                            <x-text-input wire:model="department" id="department" class="mt-1 block w-full" type="text" name="department" maxlength="255" />
+                            <x-input-error :messages="$errors->get('department')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="invoice_email" :value="__('Email')" />
+                            <x-text-input wire:model="invoice_email" id="invoice_email" class="mt-1 block w-full" type="email" name="invoice_email" required maxlength="255" />
+                            <x-input-error :messages="$errors->get('invoice_email')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="invoice_phone" :value="__('Phone')" />
+                            <x-text-input wire:model="invoice_phone" id="invoice_phone" class="mt-1 block w-full" type="text" name="invoice_phone" required maxlength="50" />
+                            <x-input-error :messages="$errors->get('invoice_phone')" class="mt-2" />
+                        </div>
+                        <div class="sm:col-span-2">
+                            <x-input-label for="invoice_location" :value="__('Location')" />
+                            <x-text-input wire:model="invoice_location" id="invoice_location" class="mt-1 block w-full" type="text" name="invoice_location" maxlength="255" />
+                            <x-input-error :messages="$errors->get('invoice_location')" class="mt-2" />
+                        </div>
+                    </div>
+                    <div class="mt-4 flex justify-end">
+                        <x-primary-button wire:loading.attr="disabled" wire:target="saveInvoiceSettings">
+                            <span wire:loading.remove wire:target="saveInvoiceSettings">{{ __('Save invoice settings') }}</span>
+                            <span wire:loading wire:target="saveInvoiceSettings">{{ __('Saving…') }}</span>
                         </x-primary-button>
                     </div>
                 </x-card>

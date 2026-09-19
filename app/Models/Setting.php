@@ -60,6 +60,26 @@ class Setting extends Model
 
     public const TRAINING_ONSITE_RATE = 'pricing.training_onsite_rate';
 
+    /**
+     * Proforma invoice document settings.
+     */
+    public const INVOICE_DOC_TITLE = 'invoicing.doc_title';
+
+    public const INVOICE_COMPANY = 'invoicing.company';
+
+    public const INVOICE_DEPARTMENT = 'invoicing.department';
+
+    public const INVOICE_EMAIL = 'invoicing.email';
+
+    public const INVOICE_PHONE = 'invoicing.phone';
+
+    public const INVOICE_LOCATION = 'invoicing.location';
+
+    /**
+     * Default payment window in days from issue. Overridable per invoice.
+     */
+    public const INVOICE_DUE_DAYS = 'invoicing.due_days';
+
     public static function get(string $key, ?string $default = null): ?string
     {
         $value = static::query()->where('key', $key)->value('value');

@@ -1,14 +1,13 @@
 @php
     $currency = $pricing['currency'] ?? 'GHS';
     $isCustom = (bool) ($pricing['is_custom'] ?? false);
-    $validUntil = $issuedAt->copy()->addDays(30);
 @endphp
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Proforma Invoice - {{ $contact['college_name'] ?? $deployment->school_name }}</title>
+    <title>{{ $docTitle }} - {{ $contact['college_name'] ?? $deployment->school_name }}</title>
     <style>
         @page {
             margin: 1.5cm;
@@ -257,11 +256,16 @@
                     <div class="company-subtitle">by Matme Inc.</div>
                 </td>
                 <td>
-                    <div class="title">Proforma Invoice</div>
+                    <div class="title">{{ $docTitle }}</div>
                     <div class="meta-text">
                         Invoice No: <strong>{{ $invoiceNo }}</strong><br>
                         Date: <strong>{{ $issuedAt->format('M d, Y') }}</strong><br>
-                        Validity: <strong>30 Days (Expires {{ $validUntil->format('M d, Y') }})</strong>
+                        @if ($dueAt)
+                            Due: <strong>{{ $dueAt->format('M d, Y') }}</strong><br>
+                        @endif
+                        @if ($nextPaymentAt)
+                            Next payment: <strong>{{ $nextPaymentAt->format('M d, Y') }}</strong>
+                        @endif
                     </div>
                 </td>
             </tr>
@@ -284,10 +288,19 @@
                 <td>
                     <div class="info-header">Issued By:</div>
                     <div class="info-body">
-                        <strong>Matme Inc.</strong>
-                        Systems Integration &amp; Licensing Team<br>
-                        Email: successinnovativehub@gmail.com<br>
-                        Phone: 0249100268 / Accra, Ghana
+                        <strong>{{ $issuer['company'] }}</strong>
+                        @if (! empty($issuer['department']))
+                            {{ $issuer['department'] }}<br>
+                        @endif
+                        @if (! empty($issuer['email']))
+                            Email: {{ $issuer['email'] }}<br>
+                        @endif
+                        @if (! empty($issuer['phone']))
+                            Phone: {{ $issuer['phone'] }}<br>
+                        @endif
+                        @if (! empty($issuer['location']))
+                            {{ $issuer['location'] }}
+                        @endif
                     </div>
                 </td>
             </tr>
@@ -397,7 +410,11 @@
                     1. All pricing is in <strong>{{ $currency }}</strong>.<br>
                     2. Annual Renewals are billed at the start of each academic year.<br>
                     3. Setup and implementation begin upon mutual agreement and signing of Service Level Agreement (SLA).<br>
-                    4. This proforma invoice is valid for exactly 30 days from date of issue.
+                    @if ($dueAt)
+                        4. Payment is due by <strong>{{ $dueAt->format('M d, Y') }}</strong>.
+                    @else
+                        4. This {{ strtolower($docTitle) }} is valid for exactly 30 days from date of issue.
+                    @endif
                 </div>
 
                 <table class="totals-table">

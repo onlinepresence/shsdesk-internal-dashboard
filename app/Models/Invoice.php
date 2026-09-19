@@ -8,11 +8,15 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['deployment_id', 'licence_id', 'invoice_no', 'contact', 'pricing', 'created_by'])]
+#[Fillable(['deployment_id', 'licence_id', 'invoice_no', 'status', 'contact', 'pricing', 'due_at', 'next_payment_at', 'doc_title', 'issuer', 'created_by'])]
 class Invoice extends Model
 {
     /** @use HasFactory<InvoiceFactory> */
     use HasFactory;
+
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_PAID = 'paid';
 
     /**
      * @return array<string, string>
@@ -22,7 +26,18 @@ class Invoice extends Model
         return [
             'contact' => 'array',
             'pricing' => 'array',
+            'due_at' => 'date',
+            'next_payment_at' => 'date',
+            'issuer' => 'array',
         ];
+    }
+
+    /**
+     * Whether this invoice may still be deleted.
+     */
+    public function isPending(): bool
+    {
+        return $this->status === static::STATUS_PENDING;
     }
 
     /**

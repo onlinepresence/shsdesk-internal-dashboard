@@ -23,8 +23,13 @@ class InvoiceFactory extends Factory
             'deployment_id' => Deployment::factory(),
             'licence_id' => null,
             'invoice_no' => null,
+            'status' => Invoice::STATUS_PENDING,
             'contact' => ['college_name' => $this->faker->company()],
             'pricing' => Licence::priceSnapshot([], 500),
+            'due_at' => null,
+            'next_payment_at' => null,
+            'doc_title' => null,
+            'issuer' => null,
             'created_by' => null,
         ];
     }

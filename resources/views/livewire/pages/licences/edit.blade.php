@@ -45,6 +45,10 @@ new #[Layout('layouts.app')] class extends Component
 
     public bool $founding_client = false;
 
+    public ?string $due_at = null;
+
+    public ?string $next_payment_at = null;
+
     public function mount(Deployment $deployment): void
     {
         $this->deployment = $deployment;
@@ -406,11 +410,34 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
+     * Open the invoice modal with due dates prefilled: the payment
+     * window from invoice settings, overridable here, and the next
+     * annual payment a year out.
+     */
+    public function openInvoiceModal(): void
+    {
+        $dueDays = max(1, Setting::getInt(Setting::INVOICE_DUE_DAYS, 30));
+        $this->due_at = today()->addDays($dueDays)->toDateString();
+        $this->next_payment_at = today()->addYear()->toDateString();
+        $this->resetValidation();
+        $this->dispatch('open-invoice-form');
+    }
+
+    /**
      * Store the current (possibly unsaved) quote as a proforma invoice
      * and ask the browser to open the printable FlowEdu-style invoice.
      */
     public function createInvoice(): void
     {
+        if ($this->next_payment_at === '') {
+            $this->next_payment_at = null;
+        }
+
+        $validated = $this->validate([
+            'due_at' => ['required', 'date'],
+            'next_payment_at' => ['nullable', 'date'],
+        ]);
+
         $moduleFlags = array_fill_keys($this->modules, true);
 
         $invoice = $this->deployment->invoices()->create([
@@ -419,6 +446,16 @@ new #[Layout('layouts.app')] class extends Component
             'contact' => [
                 'college_name' => $this->deployment->school_name,
                 'url' => $this->deployment->url,
+            ],
+            'due_at' => $validated['due_at'],
+            'next_payment_at' => $validated['next_payment_at'],
+            'doc_title' => Setting::get(Setting::INVOICE_DOC_TITLE, 'Proforma Invoice'),
+            'issuer' => [
+                'company' => Setting::get(Setting::INVOICE_COMPANY, 'Matme Inc.'),
+                'department' => Setting::get(Setting::INVOICE_DEPARTMENT),
+                'email' => Setting::get(Setting::INVOICE_EMAIL),
+                'phone' => Setting::get(Setting::INVOICE_PHONE),
+                'location' => Setting::get(Setting::INVOICE_LOCATION),
             ],
             'created_by' => Auth::id(),
         ]);
@@ -429,6 +466,7 @@ new #[Layout('layouts.app')] class extends Component
 
         unset($this->latestInvoice, $this->quoteLocked);
 
+        $this->dispatch('close-invoice-form');
         $this->dispatch('open-invoice', url: route('licences.invoices.show', [$this->deployment->uuid, $invoice->id]));
     }
 
@@ -503,15 +541,12 @@ new #[Layout('layouts.app')] class extends Component
     }
 }; ?>
 
-<div class="py-12" x-data="{}" x-on:open-invoice.window="window.open($event.detail.url, '_blank')">
+<div class="py-12" x-data="{}" x-on:open-invoice.window="window.open($event.detail.url, '_blank')" x-on:open-invoice-form.window="$dispatch('open-modal', 'invoice-form')" x-on:close-invoice-form.window="$dispatch('close-modal', 'invoice-form')">
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6">
             <x-section-title :title="__('Licence — ').$deployment->school_name" subtitle="Terms in force for this deployment.">
                 <x-button-link :href="route('invoices.index', ['deployment' => $deployment->uuid])" wire:navigate variant="tertiary">
-                    {{ __('Their bills') }}
-                </x-button-link>
-                <x-button-link :href="route('invoices.index')" wire:navigate variant="tertiary">
-                    {{ __('All bills') }}
+                    {{ __('Invoices') }}
                 </x-button-link>
                 <x-button-link :href="route('licences.index')" wire:navigate variant="tertiary">
                     {{ __('Back to licences') }}
@@ -777,9 +812,9 @@ new #[Layout('layouts.app')] class extends Component
                                 <span wire:loading.remove wire:target="save">{{ __('Save licence') }}</span>
                                 <span wire:loading wire:target="save">{{ __('Saving…') }}</span>
                             </x-primary-button>
-                            <x-secondary-button type="button" wire:click="createInvoice" wire:loading.attr="disabled" class="w-full justify-center">
-                                <span wire:loading.remove wire:target="createInvoice">{{ __('Create invoice') }}</span>
-                                <span wire:loading wire:target="createInvoice">{{ __('Preparing…') }}</span>
+                            <x-secondary-button type="button" wire:click="openInvoiceModal" wire:loading.attr="disabled" class="w-full justify-center">
+                                <span wire:loading.remove wire:target="openInvoiceModal">{{ __('Create invoice') }}</span>
+                                <span wire:loading wire:target="openInvoiceModal">{{ __('Preparing…') }}</span>
                             </x-secondary-button>
                             @if ($deployment->latestLicence !== null)
                                 <x-secondary-button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'confirm-licence-renew')" class="w-full justify-center">
@@ -806,6 +841,141 @@ new #[Layout('layouts.app')] class extends Component
                         <x-primary-button class="ms-3" wire:loading.attr="disabled" wire:target="renew">
                             <span wire:loading.remove wire:target="renew">{{ __('Renew') }}</span>
                             <span wire:loading wire:target="renew">{{ __('Renewing…') }}</span>
+                        </x-primary-button>
+                    </div>
+                </form>
+            </x-modal>
+
+            <x-modal name="invoice-form" focusable>
+                <form wire:submit="createInvoice" class="p-6">
+                    <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                        {{ __('Generate invoice?') }}
+                    </h2>
+                    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                        {{ __('Review what will be billed. Groups start collapsed — open one to inspect its lines. Generating stores the invoice and opens the printable copy.') }}
+                    </p>
+
+                    @if ($this->preview['is_custom'])
+                        <div class="mt-4">
+                            <x-alert tone="warn" title="Custom quote" :dismissible="false">
+                                {{ __('No automatic total — the invoice records the custom band (:band).', ['band' => $this->preview['band_label']]) }}
+                            </x-alert>
+                        </div>
+                    @else
+                        <div class="mt-4 flex flex-col gap-3">
+                            <details class="rounded-lg border border-slate-200 dark:border-white/10">
+                                <summary class="flex cursor-pointer items-center justify-between gap-4 px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    <span>{{ __('Core') }}</span>
+                                    <span>{{ $this->preview['currency'] }} {{ number_format($this->preview['core_upfront_final'], 2) }}</span>
+                                </summary>
+                                <dl class="flex flex-col gap-2 border-t border-slate-200 px-4 py-3 dark:border-white/10">
+                                    <div class="flex items-center justify-between gap-4 text-sm">
+                                        <dt class="text-slate-600 dark:text-slate-300">{{ __('Core upfront') }}</dt>
+                                        <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['core_upfront_final'], 2) }}</dd>
+                                    </div>
+                                    @if ($this->preview['founding_discount_upfront'] > 0)
+                                        <div class="flex items-center justify-between gap-4 text-sm">
+                                            <dt class="text-slate-600 dark:text-slate-300">{{ __('Founding-client discount') }}</dt>
+                                            <dd class="font-medium text-green-700 dark:text-green-400">−{{ $this->preview['currency'] }} {{ number_format($this->preview['founding_discount_upfront'], 2) }}</dd>
+                                        </div>
+                                    @endif
+                                    <div class="flex items-center justify-between gap-4 text-sm">
+                                        <dt class="text-slate-600 dark:text-slate-300">{{ __('Core renewal') }}</dt>
+                                        <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['core_renewal_final'], 2) }}</dd>
+                                    </div>
+                                </dl>
+                            </details>
+
+                            @if (count($this->preview['modules']) > 0)
+                                <details class="rounded-lg border border-slate-200 dark:border-white/10">
+                                    <summary class="flex cursor-pointer items-center justify-between gap-4 px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+                                        <span>{{ __('Modules (:count)', ['count' => count($this->preview['modules'])]) }}</span>
+                                        <span>{{ $this->preview['currency'] }} {{ number_format($this->preview['modules_onetime_final'], 2) }}</span>
+                                    </summary>
+                                    <dl class="flex flex-col gap-2 border-t border-slate-200 px-4 py-3 dark:border-white/10">
+                                        @foreach ($this->preview['modules'] as $module)
+                                            <div class="flex items-center justify-between gap-4 text-sm">
+                                                <dt class="text-slate-600 dark:text-slate-300">{{ $module['label'] }}</dt>
+                                                <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($module['onetime'], 2) }}</dd>
+                                            </div>
+                                        @endforeach
+                                        @if ($this->preview['bundle_discount_onetime'] > 0)
+                                            <div class="flex items-center justify-between gap-4 text-sm">
+                                                <dt class="text-slate-600 dark:text-slate-300">{{ __('Bundle discount') }}</dt>
+                                                <dd class="font-medium text-green-700 dark:text-green-400">−{{ $this->preview['currency'] }} {{ number_format($this->preview['bundle_discount_onetime'], 2) }}</dd>
+                                            </div>
+                                        @endif
+                                    </dl>
+                                </details>
+                            @endif
+
+                            <details class="rounded-lg border border-slate-200 dark:border-white/10">
+                                <summary class="flex cursor-pointer items-center justify-between gap-4 px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    <span>{{ __('Hosting & integration') }}</span>
+                                    <span>{{ $this->preview['currency'] }} {{ number_format($this->preview['hosting_setup_fee'] + $this->preview['configuration_fee'], 2) }}</span>
+                                </summary>
+                                <dl class="flex flex-col gap-2 border-t border-slate-200 px-4 py-3 dark:border-white/10">
+                                    <div class="flex items-center justify-between gap-4 text-sm">
+                                        <dt class="text-slate-600 dark:text-slate-300">{{ __('Hosting — :mode', ['mode' => $this->preview['hosting_label']]) }}</dt>
+                                        <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['hosting_setup_fee'], 2) }}</dd>
+                                    </div>
+                                    @foreach ($this->preview['addons'] as $addon)
+                                        <div class="flex items-center justify-between gap-4 text-sm">
+                                            <dt class="text-slate-600 dark:text-slate-300">{{ $addon['label'] }}</dt>
+                                            <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($addon['price'], 2) }}</dd>
+                                        </div>
+                                    @endforeach
+                                </dl>
+                            </details>
+
+                            @if (count($this->preview['trainings']) > 0)
+                                <details class="rounded-lg border border-slate-200 dark:border-white/10">
+                                    <summary class="flex cursor-pointer items-center justify-between gap-4 px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+                                        <span>{{ __('Training') }}</span>
+                                        <span>{{ $this->preview['currency'] }} {{ number_format($this->preview['training_fee'], 2) }}</span>
+                                    </summary>
+                                    <dl class="flex flex-col gap-2 border-t border-slate-200 px-4 py-3 dark:border-white/10">
+                                        @foreach ($this->preview['trainings'] as $training)
+                                            <div class="flex items-center justify-between gap-4 text-sm">
+                                                <dt class="text-slate-600 dark:text-slate-300">{{ $training['label'] }}</dt>
+                                                <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($training['price'], 2) }}</dd>
+                                            </div>
+                                        @endforeach
+                                    </dl>
+                                </details>
+                            @endif
+
+                            <div class="flex items-center justify-between gap-4 rounded-lg bg-slate-50 px-4 py-3 text-sm dark:bg-white/5">
+                                <dt class="font-semibold text-slate-900 dark:text-white">{{ __('Upfront total') }}</dt>
+                                <dd class="font-semibold text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['upfront_total'], 2) }}</dd>
+                            </div>
+                            <div class="flex items-center justify-between gap-4 px-4 text-sm">
+                                <dt class="text-slate-600 dark:text-slate-300">{{ __('Renewal total') }}</dt>
+                                <dd class="font-medium text-slate-900 dark:text-white">{{ $this->preview['currency'] }} {{ number_format($this->preview['renew_total'], 2) }}</dd>
+                            </div>
+                        </div>
+                    @endif
+
+                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                            <x-input-label for="due_at" :value="__('Invoice due date')" />
+                            <x-text-input wire:model="due_at" id="due_at" class="mt-1 block w-full" type="date" name="due_at" required />
+                            <x-input-error :messages="$errors->get('due_at')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="next_payment_at" :value="__('Next payment date')" />
+                            <x-text-input wire:model="next_payment_at" id="next_payment_at" class="mt-1 block w-full" type="date" name="next_payment_at" />
+                            <x-input-error :messages="$errors->get('next_payment_at')" class="mt-2" />
+                        </div>
+                    </div>
+
+                    <div class="mt-6 flex justify-end gap-2">
+                        <x-secondary-button type="button" x-on:click="$dispatch('close')">
+                            {{ __('Cancel') }}
+                        </x-secondary-button>
+                        <x-primary-button class="ms-3" wire:loading.attr="disabled" wire:target="createInvoice">
+                            <span wire:loading.remove wire:target="createInvoice">{{ __('Generate invoice') }}</span>
+                            <span wire:loading wire:target="createInvoice">{{ __('Generating…') }}</span>
                         </x-primary-button>
                     </div>
                 </form>

@@ -32,6 +32,13 @@ class SettingsSeeder extends Seeder
         $this->seedIfMissing(Setting::TRAINING_ADMIN_RATE, (string) config('licence-catalogue.fees.training.admin', '600'));
         $this->seedIfMissing(Setting::TRAINING_TEACHER_RATE, (string) config('licence-catalogue.fees.training.teacher', '500'));
         $this->seedIfMissing(Setting::TRAINING_ONSITE_RATE, (string) config('licence-catalogue.fees.training.onsite', '1500'));
+        $this->seedIfMissing(Setting::INVOICE_DOC_TITLE, 'Proforma Invoice');
+        $this->seedIfMissing(Setting::INVOICE_COMPANY, 'Matme Inc.');
+        $this->seedIfMissing(Setting::INVOICE_DEPARTMENT, 'Systems Integration & Licensing Team');
+        $this->seedIfMissing(Setting::INVOICE_EMAIL, 'successinnovativehub@gmail.com');
+        $this->seedIfMissing(Setting::INVOICE_PHONE, '0249100268');
+        $this->seedIfMissing(Setting::INVOICE_LOCATION, 'Accra, Ghana');
+        $this->seedIfMissing(Setting::INVOICE_DUE_DAYS, '30');
     }
 
     /**
