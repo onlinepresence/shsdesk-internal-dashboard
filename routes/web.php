@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Deployment;
+use App\Models\Invoice;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
@@ -28,6 +30,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Volt::route('deployments/{deployment:uuid}/licence', 'pages.licences.edit')
         ->name('licences.edit');
+
+    Route::get('deployments/{deployment:uuid}/licence/invoices/{invoice}', function (Deployment $deployment, Invoice $invoice) {
+        abort_unless($invoice->deployment_id === $deployment->id, 404);
+
+        return view('licences.invoice', [
+            'deployment' => $deployment,
+            'pricing' => $invoice->pricing ?? [],
+            'contact' => $invoice->contact ?? ['college_name' => $deployment->school_name],
+            'invoiceNo' => $invoice->invoice_no ?? 'FE-DRAFT',
+            'issuedAt' => $invoice->created_at,
+        ]);
+    })->name('licences.invoices.show');
 });
 
 Route::middleware(['auth', 'verified', 'can:manage-catalogue'])->group(function () {

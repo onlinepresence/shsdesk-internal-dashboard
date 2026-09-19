@@ -2,7 +2,9 @@
 
 use App\Models\Deployment;
 use App\Models\Feature;
+use App\Models\Invoice;
 use App\Models\Licence;
+use App\Models\Setting;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
@@ -20,6 +22,8 @@ new #[Layout('layouts.app')] class extends Component
     public array $modules = [];
 
     public $max_students = null;
+
+    public ?string $student_band = null;
 
     public ?string $starts_at = null;
 
@@ -55,6 +59,7 @@ new #[Layout('layouts.app')] class extends Component
             $this->hosting_mode = 'self_hosted';
             $this->config_setup = false;
             $this->migration = false;
+            $this->student_band = null;
 
             return;
         }
@@ -62,6 +67,9 @@ new #[Layout('layouts.app')] class extends Component
         $this->core = array_keys(array_filter((array) $current->core));
         $this->modules = array_keys(array_filter((array) $current->modules));
         $this->max_students = $current->caps['max_active_students'] ?? null;
+        $this->student_band = Licence::bandKeyForCap(
+            isset($current->caps['max_active_students']) ? (int) $current->caps['max_active_students'] : null
+        );
         $this->starts_at = $current->starts_at?->format('Y-m-d');
         $this->expires_at = $current->expires_at?->format('Y-m-d');
         $this->notes = $current->notes;
@@ -97,29 +105,50 @@ new #[Layout('layouts.app')] class extends Component
         $this->normalizeBlanks();
         $validated = $this->validate($this->rules());
 
+        $current = $this->deployment->latestLicence;
+        $locked = $current !== null && $this->quoteLocked;
+
+        // Once an invoice exists the priced inputs are read-only: keep
+        // carrying the stored terms instead of whatever was posted.
+        $moduleKeys = $locked
+            ? array_keys(array_filter((array) $current->modules))
+            : ($validated['modules'] ?? []);
+        $maxStudents = $locked && isset($current->caps['max_active_students'])
+            ? (int) $current->caps['max_active_students']
+            : $this->maxStudents();
+        $quote = $locked
+            ? [
+                'hosting_mode' => $current->hosting_mode,
+                'config_setup' => (bool) $current->config_setup,
+                'migration' => (bool) $current->migration,
+                'training_admin' => $current->training_admin ?? 0,
+                'training_teacher' => $current->training_teacher ?? 0,
+                'training_onsite' => $current->training_onsite ?? 0,
+                'founding_client' => (bool) $current->founding_client,
+            ]
+            : $this->quoteInput();
+
         $payload = [
             'core' => array_fill_keys($validated['core'] ?? [], true),
-            'modules' => array_fill_keys($validated['modules'] ?? [], true),
-            'caps' => $this->maxStudents() !== null ? ['max_active_students' => $this->maxStudents()] : null,
+            'modules' => array_fill_keys($moduleKeys, true),
+            'caps' => $maxStudents !== null ? ['max_active_students' => $maxStudents] : null,
             'price_snapshot' => Licence::priceSnapshot(
-                array_fill_keys($validated['modules'] ?? [], true),
-                $this->maxStudents(),
+                array_fill_keys($moduleKeys, true),
+                $maxStudents,
                 $this->reportedStudents(),
-                $this->quoteInput(),
+                $quote,
             ),
             'starts_at' => $validated['starts_at'],
             'expires_at' => $validated['expires_at'],
             'notes' => $validated['notes'],
-            'hosting_mode' => $validated['hosting_mode'],
-            'config_setup' => (bool) ($validated['config_setup'] ?? false),
-            'migration' => (bool) ($validated['migration'] ?? false),
-            'training_admin' => (int) ($validated['training_admin'] ?? 0),
-            'training_teacher' => (int) ($validated['training_teacher'] ?? 0),
-            'training_onsite' => (int) ($validated['training_onsite'] ?? 0),
-            'founding_client' => (bool) ($validated['founding_client'] ?? false),
+            'hosting_mode' => $quote['hosting_mode'],
+            'config_setup' => (bool) ($quote['config_setup'] ?? false),
+            'migration' => (bool) ($quote['migration'] ?? false),
+            'training_admin' => (int) ($quote['training_admin'] ?? 0),
+            'training_teacher' => (int) ($quote['training_teacher'] ?? 0),
+            'training_onsite' => (int) ($quote['training_onsite'] ?? 0),
+            'founding_client' => (bool) ($quote['founding_client'] ?? false),
         ];
-
-        $current = $this->deployment->latestLicence;
 
         if ($current === null) {
             $licence = $this->deployment->licences()->create($payload);
@@ -220,6 +249,7 @@ new #[Layout('layouts.app')] class extends Component
             'modules' => ['array'],
             'modules.*' => [Rule::in($this->moduleKeys(false))],
             'max_students' => ['nullable', 'integer', 'min:1'],
+            'student_band' => ['nullable', 'string', Rule::in($this->bandKeys())],
             'hosting_mode' => ['required', 'string', Rule::in(Licence::HOSTING_MODES)],
             'config_setup' => ['boolean'],
             'migration' => ['boolean'],
@@ -239,6 +269,81 @@ new #[Layout('layouts.app')] class extends Component
             ],
             'notes' => ['nullable', 'string'],
         ];
+    }
+
+    /**
+     * Band preset picked in the form. Fills the cap with the band max
+     * (or the band min for the open-ended custom band) unless the
+     * current cap already sits inside the band, so typing a cap never
+     * gets clobbered by the sync-back below.
+     */
+    public function updatedStudentBand(): void
+    {
+        if ($this->student_band === null || $this->student_band === '') {
+            $this->student_band = null;
+            $this->max_students = null;
+
+            return;
+        }
+
+        $current = $this->maxStudents();
+
+        foreach (Setting::corePricing() as $band) {
+            if ($band['key'] !== $this->student_band) {
+                continue;
+            }
+
+            $inBand = $current !== null
+                && $current >= $band['min']
+                && ($band['max'] === null || $current <= $band['max']);
+
+            if (! $inBand) {
+                $this->max_students = $band['max'] ?? $band['min'];
+            }
+
+            return;
+        }
+
+        $this->student_band = null;
+    }
+
+    /**
+     * Keep the band preset in sync when the cap is typed by hand.
+     */
+    public function updatedMaxStudents(): void
+    {
+        $key = Licence::bandKeyForCap($this->maxStudents());
+
+        if ($key !== $this->student_band) {
+            $this->student_band = $key;
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function bandKeys(): array
+    {
+        return array_column(Setting::corePricing(), 'key');
+    }
+
+    /**
+     * Newest stored invoice for this deployment, if one was issued.
+     */
+    #[Computed]
+    public function latestInvoice(): ?Invoice
+    {
+        return $this->deployment->invoices()->latest()->first();
+    }
+
+    /**
+     * Whether priced inputs are read-only. Once an invoice exists the
+     * modules, band/cap, and quote details carry the stored terms.
+     */
+    #[Computed]
+    public function quoteLocked(): bool
+    {
+        return $this->latestInvoice !== null;
     }
 
     protected function normalizeBlanks(): void
@@ -288,11 +393,61 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
+     * Form metadata (hosting options, addon fees, training rates) in a
+     * single pricing read, so the form never fans out into one query
+     * per price label on every keystroke.
+     *
+     * @return array{hostingOptions: array<string, array{label: string, fee: float}>, configSetupFee: float, migrationFee: float, rates: array{admin: float, teacher: float, onsite: float}}
+     */
+    #[Computed]
+    public function quoteMeta(): array
+    {
+        return Licence::quoteMeta();
+    }
+
+    /**
+     * Store the current (possibly unsaved) quote as a proforma invoice
+     * and ask the browser to open the printable FlowEdu-style invoice.
+     */
+    public function createInvoice(): void
+    {
+        $moduleFlags = array_fill_keys($this->modules, true);
+
+        $invoice = $this->deployment->invoices()->create([
+            'licence_id' => $this->deployment->latestLicence?->id,
+            'pricing' => Licence::priceSnapshot($moduleFlags, $this->maxStudents(), $this->reportedStudents(), $this->quoteInput()),
+            'contact' => [
+                'college_name' => $this->deployment->school_name,
+                'url' => $this->deployment->url,
+            ],
+            'created_by' => Auth::id(),
+        ]);
+
+        $invoice->update([
+            'invoice_no' => 'FE-'.$invoice->created_at->format('Ymd').'-'.str_pad((string) $invoice->id, 4, '0', STR_PAD_LEFT),
+        ]);
+
+        unset($this->latestInvoice, $this->quoteLocked);
+
+        $this->dispatch('open-invoice', url: route('licences.invoices.show', [$this->deployment->uuid, $invoice->id]));
+    }
+
+    private ?int $reportedCache = null;
+
+    private bool $reportedLoaded = false;
+
+    /**
      * Latest reported student count, if this deployment ever checked in.
+     * Memoized per request so preview, save, and renew share one query.
      */
     protected function reportedStudents(): ?int
     {
-        return $this->deployment->heartbeats()->latest()->first()?->students;
+        if (! $this->reportedLoaded) {
+            $this->reportedCache = $this->deployment->heartbeats()->latest()->first()?->students;
+            $this->reportedLoaded = true;
+        }
+
+        return $this->reportedCache;
     }
 
     /**
@@ -348,7 +503,7 @@ new #[Layout('layouts.app')] class extends Component
     }
 }; ?>
 
-<div class="py-12">
+<div class="py-12" x-data="{}" x-on:open-invoice.window="window.open($event.detail.url, '_blank')">
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6">
             <x-section-title :title="__('Licence — ').$deployment->school_name" subtitle="Terms in force for this deployment.">
@@ -357,7 +512,9 @@ new #[Layout('layouts.app')] class extends Component
                 </x-button-link>
             </x-section-title>
 
-            <form wire:submit="save" class="flex flex-col gap-6">
+            <form wire:submit="save">
+                <div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
+                    <div class="flex min-w-0 flex-col gap-6 lg:col-span-3">
                 <x-card>
                     <x-slot name="title">Core features</x-slot>
                     <div class="flex flex-col gap-3">
@@ -374,7 +531,7 @@ new #[Layout('layouts.app')] class extends Component
                         @endforeach
                         @foreach ($this->offerings['core'] as $feature)
                             <label class="flex cursor-pointer items-center gap-3">
-                                <input wire:model="core" type="checkbox" value="{{ $feature->key }}" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <input wire:model.live="core" type="checkbox" value="{{ $feature->key }}" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
                                 <span class="min-w-0 flex-1">
                                     <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ $feature->label }}</span>
                                     <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $feature->description }}</span>
@@ -388,9 +545,14 @@ new #[Layout('layouts.app')] class extends Component
                 <x-card>
                     <x-slot name="title">Modules</x-slot>
                     <div class="flex flex-col gap-3">
+                        @if ($this->quoteLocked)
+                            <x-alert tone="info" title="Quoted terms locked" :dismissible="false">
+                                Invoice {{ $this->latestInvoice->invoice_no }} was issued for these terms, so modules stay as quoted.
+                            </x-alert>
+                        @endif
                         @foreach ($this->offerings['modules'] as $module)
                             <label class="flex cursor-pointer items-center gap-3">
-                                <input wire:model.live="modules" type="checkbox" value="{{ $module->key }}" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <input wire:model.live="modules" type="checkbox" value="{{ $module->key }}" @disabled($this->quoteLocked) class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
                                 <span class="min-w-0 flex-1">
                                     <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ $module->label }}</span>
                                     <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $module->description }}</span>
@@ -409,24 +571,34 @@ new #[Layout('layouts.app')] class extends Component
                     <x-slot name="title">Caps &amp; term</x-slot>
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
+                            <x-input-label for="student_band" :value="__('Student band')" />
+                            <x-select wire:model.live="student_band" id="student_band" name="student_band" class="mt-1 block w-full" :disabled="$this->quoteLocked">
+                                <option value="">{{ __('No cap (band from heartbeats)') }}</option>
+                                @foreach (Setting::corePricing() as $band)
+                                    <option value="{{ $band['key'] }}">{{ $band['label'] }}{{ ! empty($band['custom']) ? ' — custom quote' : '' }}</option>
+                                @endforeach
+                            </x-select>
+                            <x-input-error :messages="$errors->get('student_band')" class="mt-2" />
+                        </div>
+                        <div>
                             <x-input-label for="max_students" :value="__('Max active students')" />
-                            <x-text-input wire:model="max_students" id="max_students" class="mt-1 block w-full" type="number" min="1" name="max_students" placeholder="No cap" />
-                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Empty bands from the latest heartbeat count. 3,501+ students needs a custom quote.</p>
+                            <x-text-input wire:model.live.debounce.500ms="max_students" id="max_students" class="mt-1 block w-full" type="number" min="1" name="max_students" placeholder="No cap" :disabled="$this->quoteLocked" />
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Picking a band fills the cap; typing a cap re-selects its band. 3,501+ students needs a custom quote.</p>
                             <x-input-error :messages="$errors->get('max_students')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="starts_at" :value="__('Starts on')" />
-                            <x-text-input wire:model="starts_at" id="starts_at" class="mt-1 block w-full" type="date" name="starts_at" />
+                            <x-text-input wire:model.live="starts_at" id="starts_at" class="mt-1 block w-full" type="date" name="starts_at" />
                             <x-input-error :messages="$errors->get('starts_at')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="expires_at" :value="__('Expires on')" />
-                            <x-text-input wire:model="expires_at" id="expires_at" class="mt-1 block w-full" type="date" name="expires_at" />
+                            <x-text-input wire:model.live="expires_at" id="expires_at" class="mt-1 block w-full" type="date" name="expires_at" />
                             <x-input-error :messages="$errors->get('expires_at')" class="mt-2" />
                         </div>
                         <div class="sm:col-span-2">
                             <x-input-label for="notes" :value="__('Notes')" />
-                            <x-text-input wire:model="notes" id="notes" class="mt-1 block w-full" type="text" name="notes" placeholder="{{ $this->preview['is_custom'] ? 'Custom quote — describe the manual terms for ops' : 'Internal notes, never sent to the school' }}" />
+                            <x-text-input wire:model.live.debounce.500ms="notes" id="notes" class="mt-1 block w-full" type="text" name="notes" placeholder="{{ $this->preview['is_custom'] ? 'Custom quote — describe the manual terms for ops' : 'Internal notes, never sent to the school' }}" />
                             <x-input-error :messages="$errors->get('notes')" class="mt-2" />
                         </div>
                     </div>
@@ -434,11 +606,16 @@ new #[Layout('layouts.app')] class extends Component
 
                 <x-card>
                     <x-slot name="title">Quote details</x-slot>
+                    @if ($this->quoteLocked)
+                        <x-alert tone="info" title="Quoted terms locked" :dismissible="false" class="mb-4">
+                            Invoice {{ $this->latestInvoice->invoice_no }} was issued for these terms, so the quote stays as quoted.
+                        </x-alert>
+                    @endif
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                             <x-input-label for="hosting_mode" :value="__('Hosting mode')" />
-                            <x-select wire:model="hosting_mode" id="hosting_mode" name="hosting_mode" required class="mt-1 block w-full">
-                                @foreach (Licence::hostingOptions() as $mode => $option)
+                            <x-select wire:model.live="hosting_mode" id="hosting_mode" name="hosting_mode" required class="mt-1 block w-full" :disabled="$this->quoteLocked">
+                                @foreach ($this->quoteMeta['hostingOptions'] as $mode => $option)
                                     <option value="{{ $mode }}">{{ $option['label'] }} — {{ $this->preview['currency'] }} {{ number_format($option['fee'], 2) }} one-time</option>
                                 @endforeach
                             </x-select>
@@ -446,53 +623,58 @@ new #[Layout('layouts.app')] class extends Component
                         </div>
                         <div class="flex flex-col gap-3">
                             <label class="flex cursor-pointer items-center gap-3">
-                                <input wire:model="config_setup" type="checkbox" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <input wire:model.live="config_setup" type="checkbox" @disabled($this->quoteLocked) class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
                                 <span class="min-w-0 flex-1">
                                     <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ __('System configuration & data entry') }}</span>
-                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format(Licence::configSetupFee(), 2) }} one-time</span>
+                                     <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format($this->quoteMeta['configSetupFee'], 2) }} one-time</span>
                                 </span>
                             </label>
                             <label class="flex cursor-pointer items-center gap-3">
-                                <input wire:model="migration" type="checkbox" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <input wire:model.live="migration" type="checkbox" @disabled($this->quoteLocked) class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
                                 <span class="min-w-0 flex-1">
                                     <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ __('Legacy data migration') }}</span>
-                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format(Licence::migrationFee(), 2) }} one-time</span>
+                                     <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format($this->quoteMeta['migrationFee'], 2) }} one-time</span>
                                 </span>
                             </label>
                         </div>
-                        @php($rates = Licence::trainingRates())
+                        @php($rates = $this->quoteMeta['rates'])
                         <div>
                             <x-input-label for="training_admin" :value="__('Remote admin trainings')" />
-                            <x-text-input wire:model="training_admin" id="training_admin" class="mt-1 block w-full" type="number" min="0" name="training_admin" />
+                            <x-text-input wire:model.live.debounce.500ms="training_admin" id="training_admin" class="mt-1 block w-full" type="number" min="0" name="training_admin" :disabled="$this->quoteLocked" />
                             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format($rates['admin'], 2) }} per session</p>
                             <x-input-error :messages="$errors->get('training_admin')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="training_teacher" :value="__('Remote lecturer trainings')" />
-                            <x-text-input wire:model="training_teacher" id="training_teacher" class="mt-1 block w-full" type="number" min="0" name="training_teacher" />
+                            <x-text-input wire:model.live.debounce.500ms="training_teacher" id="training_teacher" class="mt-1 block w-full" type="number" min="0" name="training_teacher" :disabled="$this->quoteLocked" />
                             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format($rates['teacher'], 2) }} per session</p>
                             <x-input-error :messages="$errors->get('training_teacher')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="training_onsite" :value="__('On-site training days')" />
-                            <x-text-input wire:model="training_onsite" id="training_onsite" class="mt-1 block w-full" type="number" min="0" name="training_onsite" />
+                            <x-text-input wire:model.live.debounce.500ms="training_onsite" id="training_onsite" class="mt-1 block w-full" type="number" min="0" name="training_onsite" :disabled="$this->quoteLocked" />
                             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ $this->preview['currency'] }} {{ number_format($rates['onsite'], 2) }} per day</p>
                             <x-input-error :messages="$errors->get('training_onsite')" class="mt-2" />
                         </div>
                         <label class="flex cursor-pointer items-center gap-3 sm:col-span-2">
-                            <input wire:model="founding_client" type="checkbox" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                            <input wire:model.live="founding_client" type="checkbox" @disabled($this->quoteLocked) class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
                             <span class="min-w-0 flex-1">
                                 <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ __('Founding client') }}</span>
                                 <span class="block text-sm text-slate-500 dark:text-slate-400">{{ number_format($this->preview['founding_discount_rate'] * 100, 0) }}% off the core, upfront and renewal.</span>
                             </span>
                         </label>
                     </div>
-                </x-card>
+                    </x-card>
+                    </div>
 
+                    <aside class="min-w-0 lg:col-span-2 lg:sticky lg:top-6">
                 <x-card>
                     <x-slot name="title">Quote preview</x-slot>
                     <x-slot name="actions">
-                        <x-badge tone="muted">{{ $this->preview['band_label'] }}</x-badge>
+                        <span class="flex items-center gap-2">
+                            <span wire:loading.delay class="text-xs font-normal text-slate-400 dark:text-slate-500">Updating…</span>
+                            <x-badge tone="muted">{{ $this->preview['band_label'] }}</x-badge>
+                        </span>
                     </x-slot>
                     @if ($this->preview['is_custom'])
                         <x-alert tone="warn" title="Custom quote required" :dismissible="false">
@@ -500,7 +682,7 @@ new #[Layout('layouts.app')] class extends Component
                             Record the agreed terms in Notes so ops can quote manually.
                         </x-alert>
                     @else
-                        <div class="flex flex-col gap-6">
+                        <div class="flex flex-col gap-6" wire:loading.class.delay="opacity-60">
                             <section aria-label="Upfront total">
                                 <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Upfront</h3>
                                 <dl class="mt-2 flex flex-col gap-2">
@@ -584,16 +766,22 @@ new #[Layout('layouts.app')] class extends Component
                     <x-slot name="footer">Read-only estimate from settings storage; saving does not bill anything.</x-slot>
                 </x-card>
 
-                <div class="flex flex-wrap items-center justify-end gap-2">
-                    @if ($deployment->latestLicence !== null)
-                        <x-secondary-button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'confirm-licence-renew')">
-                            {{ __('Renew licence') }}
-                        </x-secondary-button>
-                    @endif
-                    <x-primary-button wire:loading.attr="disabled" wire:target="save">
-                        <span wire:loading.remove wire:target="save">{{ __('Save licence') }}</span>
-                        <span wire:loading wire:target="save">{{ __('Saving…') }}</span>
-                    </x-primary-button>
+                        <div class="flex flex-col gap-2">
+                            <x-primary-button wire:loading.attr="disabled" wire:target="save" class="w-full justify-center">
+                                <span wire:loading.remove wire:target="save">{{ __('Save licence') }}</span>
+                                <span wire:loading wire:target="save">{{ __('Saving…') }}</span>
+                            </x-primary-button>
+                            <x-secondary-button type="button" wire:click="createInvoice" wire:loading.attr="disabled" class="w-full justify-center">
+                                <span wire:loading.remove wire:target="createInvoice">{{ __('Create invoice') }}</span>
+                                <span wire:loading wire:target="createInvoice">{{ __('Preparing…') }}</span>
+                            </x-secondary-button>
+                            @if ($deployment->latestLicence !== null)
+                                <x-secondary-button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'confirm-licence-renew')" class="w-full justify-center">
+                                    {{ __('Renew licence') }}
+                                </x-secondary-button>
+                            @endif
+                        </div>
+                    </aside>
                 </div>
             </form>
 

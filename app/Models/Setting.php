@@ -96,7 +96,19 @@ class Setting extends Model
      */
     public static function corePricing(): array
     {
-        $decoded = json_decode((string) static::get(static::CORE_PRICING, '[]'), true);
+        return static::decodeCorePricing(static::get(static::CORE_PRICING, '[]'));
+    }
+
+    /**
+     * Decode a stored core-pricing JSON blob into bands. Split out so
+     * callers that already hold the raw value (e.g. a batched read)
+     * can decode without a second query.
+     *
+     * @return list<array{key: string, label: string, min: int, max: ?int, core_upfront: float, core_renewal: float, multiplier: float, custom: bool}>
+     */
+    public static function decodeCorePricing(?string $raw): array
+    {
+        $decoded = json_decode((string) $raw, true);
 
         if (! is_array($decoded)) {
             return [];

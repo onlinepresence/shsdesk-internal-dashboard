@@ -77,6 +77,14 @@ class Deployment extends Model implements AuthenticatableContract
     }
 
     /**
+     * Stored proforma invoices for this deployment, newest first.
+     */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class)->latest();
+    }
+
+    /**
      * Newest licence row — the terms currently in force.
      */
     public function latestLicence(): HasOne

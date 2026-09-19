@@ -346,26 +346,82 @@ class Licence extends Model
      * deprecated config file — the seed fallback lives in
      * SettingsSeeder.
      *
+     * All keys are read in a single query so live quote previews stay
+     * cheap on every keystroke.
+     *
      * @return array{currency: string, bands: array, bundle_discount_rate: float, bundle_threshold: int, founding_discount_rate: float, hosting_fees: array<string, float>, config_setup_fee: float, migration_fee: float, training_admin_rate: float, training_teacher_rate: float, training_onsite_rate: float}
      */
     protected static function pricingGlobals(): array
     {
+        $values = Setting::query()
+            ->whereIn('key', [
+                Setting::CURRENCY,
+                Setting::CORE_PRICING,
+                Setting::BUNDLE_DISCOUNT_RATE,
+                Setting::BUNDLE_THRESHOLD,
+                Setting::FOUNDING_DISCOUNT_RATE,
+                Setting::HOSTING_SELF_HOSTED_FEE,
+                Setting::HOSTING_MANAGED_FEE,
+                Setting::HOSTING_NONE_FEE,
+                Setting::CONFIG_SETUP_FEE,
+                Setting::MIGRATION_FEE,
+                Setting::TRAINING_ADMIN_RATE,
+                Setting::TRAINING_TEACHER_RATE,
+                Setting::TRAINING_ONSITE_RATE,
+            ])
+            ->pluck('value', 'key');
+
+        $float = static function (string $key, float $default = 0.0) use ($values): float {
+            $value = $values->get($key);
+
+            return $value === null || $value === '' ? $default : (float) $value;
+        };
+
+        $currency = $values->get(Setting::CURRENCY);
+
         return [
-            'currency' => Setting::get(Setting::CURRENCY, 'GHS') ?? 'GHS',
-            'bands' => Setting::corePricing(),
-            'bundle_discount_rate' => Setting::getFloat(Setting::BUNDLE_DISCOUNT_RATE),
-            'bundle_threshold' => Setting::getInt(Setting::BUNDLE_THRESHOLD, 4),
-            'founding_discount_rate' => Setting::getFloat(Setting::FOUNDING_DISCOUNT_RATE),
+            'currency' => $currency === null || $currency === '' ? 'GHS' : $currency,
+            'bands' => Setting::decodeCorePricing($values->get(Setting::CORE_PRICING)),
+            'bundle_discount_rate' => $float(Setting::BUNDLE_DISCOUNT_RATE),
+            'bundle_threshold' => (int) ($values->get(Setting::BUNDLE_THRESHOLD) !== null && $values->get(Setting::BUNDLE_THRESHOLD) !== '' ? (int) $values->get(Setting::BUNDLE_THRESHOLD) : 4),
+            'founding_discount_rate' => $float(Setting::FOUNDING_DISCOUNT_RATE),
             'hosting_fees' => [
-                'self_hosted' => Setting::getFloat(Setting::HOSTING_SELF_HOSTED_FEE),
-                'managed' => Setting::getFloat(Setting::HOSTING_MANAGED_FEE),
-                'none' => Setting::getFloat(Setting::HOSTING_NONE_FEE),
+                'self_hosted' => $float(Setting::HOSTING_SELF_HOSTED_FEE),
+                'managed' => $float(Setting::HOSTING_MANAGED_FEE),
+                'none' => $float(Setting::HOSTING_NONE_FEE),
             ],
-            'config_setup_fee' => Setting::getFloat(Setting::CONFIG_SETUP_FEE),
-            'migration_fee' => Setting::getFloat(Setting::MIGRATION_FEE),
-            'training_admin_rate' => Setting::getFloat(Setting::TRAINING_ADMIN_RATE),
-            'training_teacher_rate' => Setting::getFloat(Setting::TRAINING_TEACHER_RATE),
-            'training_onsite_rate' => Setting::getFloat(Setting::TRAINING_ONSITE_RATE),
+            'config_setup_fee' => $float(Setting::CONFIG_SETUP_FEE),
+            'migration_fee' => $float(Setting::MIGRATION_FEE),
+            'training_admin_rate' => $float(Setting::TRAINING_ADMIN_RATE),
+            'training_teacher_rate' => $float(Setting::TRAINING_TEACHER_RATE),
+            'training_onsite_rate' => $float(Setting::TRAINING_ONSITE_RATE),
+        ];
+    }
+
+    /**
+     * Form metadata for the quote inputs in one pricing read: hosting
+     * options, addon fees, and training rates. Prefer this over the
+     * single-value helpers when rendering a full form.
+     *
+     * @return array{hostingOptions: array<string, array{label: string, fee: float}>, configSetupFee: float, migrationFee: float, rates: array{admin: float, teacher: float, onsite: float}}
+     */
+    public static function quoteMeta(): array
+    {
+        $globals = static::pricingGlobals();
+
+        return [
+            'hostingOptions' => [
+                'self_hosted' => ['label' => static::hostingLabels()['self_hosted'], 'fee' => $globals['hosting_fees']['self_hosted']],
+                'managed' => ['label' => static::hostingLabels()['managed'], 'fee' => $globals['hosting_fees']['managed']],
+                'none' => ['label' => static::hostingLabels()['none'], 'fee' => $globals['hosting_fees']['none']],
+            ],
+            'configSetupFee' => $globals['config_setup_fee'],
+            'migrationFee' => $globals['migration_fee'],
+            'rates' => [
+                'admin' => $globals['training_admin_rate'],
+                'teacher' => $globals['training_teacher_rate'],
+                'onsite' => $globals['training_onsite_rate'],
+            ],
         ];
     }
 
@@ -469,6 +525,19 @@ class Licence extends Model
     public static function currency(): string
     {
         return static::pricingGlobals()['currency'];
+    }
+
+    /**
+     * Band key containing an explicit student cap, if any. Used to keep
+     * a band preset select in sync with a free-typed cap.
+     */
+    public static function bandKeyForCap(?int $students): ?string
+    {
+        if ($students === null) {
+            return null;
+        }
+
+        return static::bandContaining($students, static::pricingGlobals()['bands'])['key'] ?? null;
     }
 
     /**
