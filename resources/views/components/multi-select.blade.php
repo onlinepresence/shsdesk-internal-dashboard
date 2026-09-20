@@ -54,14 +54,14 @@
         x-show="open"
         x-transition.opacity
         @click.outside="open = false"
-        class="absolute z-30 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-deep"
+        class="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-deep"
     >
-        <div class="flex items-center gap-2 border-b border-slate-200 p-2 dark:border-white/10">
+        <div class="sticky top-0 flex items-center gap-2 border-b border-slate-200 bg-white p-2 dark:border-white/10 dark:bg-deep">
             <x-lucide-search class="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" aria-hidden="true" />
             <input x-model="search" type="text" placeholder="Search…" aria-label="Search options" class="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-slate-900 focus:ring-0 dark:text-slate-100 dark:placeholder:text-slate-500" />
             <button type="button" @click="clear()" x-show="selected.length > 0" class="shrink-0 text-xs font-medium text-brand hover:text-deep dark:text-slate-200 dark:hover:text-white">Clear</button>
         </div>
-        <ul class="max-h-60 overflow-auto p-1">
+        <ul class="p-1">
             <template x-for="[value, label] in filtered" :key="value">
                 <li>
                     <button

@@ -205,7 +205,7 @@ new #[Layout('layouts.app')] class extends Component
             @endif
 
             <x-card>
-                <x-table>
+                <x-table loading-except="label, host, expires_at, never, fullAccess, scope, deletingId">
                     <x-table.head>
                         <x-table.row :hover="false">
                             <x-table.heading>Key</x-table.heading>
@@ -286,19 +286,21 @@ new #[Layout('layouts.app')] class extends Component
                             <x-text-input wire:model="label" id="label" class="mt-1 block w-full" type="text" name="label" required maxlength="255" placeholder="Prospect name or site" />
                             <x-input-error :messages="$errors->get('label')" class="mt-2" />
                         </div>
-                        <div>
+                        <div x-data="{ fullAccess: $wire.entangle('fullAccess') }" class="flex flex-col gap-4">
                             <label class="flex cursor-pointer items-center gap-3">
-                                <input wire:model.live="fullAccess" type="checkbox" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <input type="checkbox" x-model="fullAccess" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
                                 <span class="min-w-0 flex-1">
                                     <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ __('Full access') }}</span>
                                     <span class="block text-sm text-slate-500 dark:text-slate-400">{{ __('Every feature. Untick to pick features below.') }}</span>
                                 </span>
                             </label>
-                        </div>
-                        <div>
-                            <x-input-label for="demo-scope" :value="__('Features')" />
-                            <x-multi-select model="scope" :options="$this->scopes" placeholder="Pick features…" :disabled="$fullAccess" />
-                            <x-input-error :messages="$errors->get('scope')" class="mt-2" />
+                            <div>
+                                <x-input-label for="demo-scope" :value="__('Features')" />
+                                <div :class="fullAccess && 'pointer-events-none opacity-60'" :inert="fullAccess">
+                                    <x-multi-select model="scope" :options="$this->scopes" placeholder="Pick features…" />
+                                </div>
+                                <x-input-error :messages="$errors->get('scope')" class="mt-2" />
+                            </div>
                         </div>
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>
