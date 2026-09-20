@@ -144,6 +144,148 @@ class Licence extends Model
     }
 
     /**
+     * Heartbeat wire answer for a licence row. Shared by the heartbeat
+     * endpoint and enrollment so both answer the identical shape.
+     *
+     * @return array{licence: array{tier: string, modules: list<string>, caps: mixed, valid_until: string}, directives: list<mixed>}
+     */
+    public static function heartbeatResponse(?Licence $licence): array
+    {
+        if ($licence === null || $licence->isExpired()) {
+            return [
+                'licence' => [
+                    'tier' => 'expired',
+                    'modules' => [],
+                    'caps' => new \stdClass,
+                    'valid_until' => now()->toIso8601String(),
+                ],
+                'directives' => [],
+            ];
+        }
+
+        return [
+            'licence' => [
+                'tier' => 'standard',
+                'modules' => $licence->enabledKeys(),
+                'caps' => $licence->caps ?? [],
+                'valid_until' => $licence->expires_at?->toIso8601String() ?? now()->toIso8601String(),
+            ],
+            'directives' => [],
+        ];
+    }
+
+    /**
+     * Air-gap licence file payload for an active licence row.
+     *
+     * @return array{deployment_uuid: string, tier: string, enabled: list<string>, caps: mixed, starts_at: ?string, expires_at: ?string, issued_at: string}
+     */
+    public static function exportPayload(Licence $licence): array
+    {
+        return [
+            'deployment_uuid' => $licence->deployment->uuid,
+            'tier' => 'standard',
+            'enabled' => $licence->enabledKeys(),
+            'caps' => $licence->caps ?? [],
+            'starts_at' => $licence->starts_at?->toIso8601String(),
+            'expires_at' => $licence->expires_at?->toIso8601String(),
+            'issued_at' => now()->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Sign an export payload with Ed25519 (libsodium, no new
+     * dependencies) and return the file document.
+     *
+     * Signature choice, documented for the FlowEdu side: Ed25519 was
+     * picked over HMAC because verification must happen on machines
+     * that may never touch this desk — a shared HMAC secret cannot
+     * be distributed to verifiers without also giving them signing
+     * power. The detached signature covers the canonical encoding of
+     * `payload`: keys in the exact order listed by exportPayload(),
+     * JSON-encoded with no spaces and unescaped slashes/unicode.
+     * FlowEdu verifies with
+     * sodium_crypto_sign_verify_detached(hex2bin(signature),
+     * json_encode(payload, JSON_UNESCAPED_SLASHES |
+     * JSON_UNESCAPED_UNICODE), hex2bin(verification_key)).
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{payload: array<string, mixed>, signature: string, algorithm: string}
+     */
+    public static function exportDocument(array $payload): array
+    {
+        $message = static::canonicalExportJson($payload);
+
+        return [
+            'payload' => $payload,
+            'signature' => bin2hex(sodium_crypto_sign_detached($message, static::exportSecretKey())),
+            'algorithm' => 'ed25519',
+        ];
+    }
+
+    /**
+     * Canonical byte encoding a payload is signed over. Key order is
+     * fixed by exportPayload() — never sort or re-encode downstream.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public static function canonicalExportJson(array $payload): string
+    {
+        return (string) json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Pretty file bytes for download and copy-paste. Formatting is
+     * free: the signature covers the canonical payload encoding, so
+     * FlowEdu re-encodes `payload` canonically before verifying.
+     */
+    public static function exportFileJson(Licence $licence): string
+    {
+        return (string) json_encode(
+            static::exportDocument(static::exportPayload($licence)),
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+    }
+
+    /**
+     * Hex verification (public) key matching the configured seed, for
+     * publishing to the FlowEdu docs.
+     *
+     * @throws \RuntimeException
+     */
+    public static function verificationKeyHex(): string
+    {
+        return bin2hex(sodium_crypto_sign_publickey(sodium_crypto_sign_seed_keypair(static::exportSeed())));
+    }
+
+    /**
+     * Ed25519 secret key from the env seed. The seed itself is never
+     * written anywhere — only derived keys leave this method.
+     *
+     * @throws \RuntimeException
+     */
+    protected static function exportSecretKey(): string
+    {
+        return sodium_crypto_sign_secretkey(sodium_crypto_sign_seed_keypair(static::exportSeed()));
+    }
+
+    /**
+     * Binary seed from config, validated before any sodium call so a
+     * missing key fails with guidance instead of a ValueError.
+     *
+     * @throws \RuntimeException
+     */
+    protected static function exportSeed(): string
+    {
+        $seed = (string) config('licence-export.signing_key');
+
+        if (strlen($seed) !== 64 || ! ctype_xdigit($seed)) {
+            throw new \RuntimeException('LICENCE_SIGNING_KEY must be 64 hex characters (a 32-byte Ed25519 seed).');
+        }
+
+        return (string) hex2bin($seed);
+    }
+
+    /**
      * Read-only quote preview for a set of module flags, cap, and quote
      * dimensions. Mirrors FlowEdu's QuoteCalculationService line order:
      * core (upfront + renewal, founding discount off core only), modules

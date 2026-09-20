@@ -460,6 +460,35 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
+     * Active licence row eligible for air-gap export, if any.
+     */
+    #[Computed]
+    public function exportableLicence(): ?Licence
+    {
+        $licence = $this->deployment->latestLicence;
+
+        if ($licence === null || $licence->isExpired()) {
+            return null;
+        }
+
+        return $licence;
+    }
+
+    /**
+     * Pretty-signed licence file text for the copy-paste fallback.
+     * Null when nothing is exportable or the signing key is missing.
+     */
+    #[Computed]
+    public function exportFileJson(): ?string
+    {
+        if ($this->exportableLicence === null || empty(config('licence-export.signing_key'))) {
+            return null;
+        }
+
+        return Licence::exportFileJson($this->exportableLicence);
+    }
+
+    /**
      * Open the invoice modal with due dates prefilled: the payment
      * window from invoice settings, overridable here, and the next
      * annual payment a year out.
@@ -607,6 +636,11 @@ new #[Layout('layouts.app')] class extends Component
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6">
             <x-section-title :title="__('Licence — ').$deployment->school_name" subtitle="Terms in force for this deployment.">
+                @if ($this->exportFileJson !== null)
+                    <x-button-link :href="route('licences.export', $deployment->uuid)" variant="tertiary">
+                        {{ __('Export licence file') }}
+                    </x-button-link>
+                @endif
                 <x-button-link :href="route('invoices.index', ['deployment' => $deployment->uuid])" wire:navigate variant="tertiary">
                     {{ __('Invoices') }}
                 </x-button-link>
@@ -899,6 +933,28 @@ new #[Layout('layouts.app')] class extends Component
                                 </x-secondary-button>
                             @endif
                         </div>
+
+                        @if ($this->exportableLicence !== null)
+                            <x-card>
+                                <x-slot name="title">Licence file</x-slot>
+                                @if ($this->exportFileJson !== null)
+                                    <div class="flex flex-col gap-3">
+                                        <p class="text-sm text-slate-500 dark:text-slate-400">Signed air-gap file for this deployment. Download it or paste the text into FlowEdu.</p>
+                                        <x-button-link :href="route('licences.export', $deployment->uuid)" variant="tertiary" class="justify-center">
+                                            {{ __('Download signed file') }}
+                                        </x-button-link>
+                                        <div x-data="{ copied: false }">
+                                            <textarea x-ref="export" readonly rows="8" class="block w-full rounded-md border-slate-300 font-mono text-xs shadow-sm focus:border-brand focus:ring-brand dark:border-white/15 dark:bg-ink dark:text-slate-100 dark:focus:border-accent dark:focus:ring-accent">{!! $this->exportFileJson !!}</textarea>
+                                            <x-secondary-button type="button" @click="navigator.clipboard.writeText($refs.export.value); copied = true" x-text="copied ? 'Copied' : 'Copy text'" class="mt-2 w-full justify-center" />
+                                        </div>
+                                    </div>
+                                @else
+                                    <x-alert tone="warn" title="Signing key missing" :dismissible="false">
+                                        Set LICENCE_SIGNING_KEY before exporting licence files.
+                                    </x-alert>
+                                @endif
+                            </x-card>
+                        @endif
                     </aside>
                 </div>
             </form>

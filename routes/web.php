@@ -2,6 +2,7 @@
 
 use App\Models\Deployment;
 use App\Models\Invoice;
+use App\Models\Licence;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
@@ -58,6 +59,27 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'nextPaymentAt' => $invoice->next_payment_at,
         ]);
     })->name('licences.invoices.show');
+
+    Route::get('deployments/{deployment:uuid}/licence/export', function (Deployment $deployment) {
+        $licence = $deployment->latestLicence;
+
+        abort_if($licence === null || $licence->isExpired(), 404);
+        abort_if(empty(config('licence-export.signing_key')), 500, 'Licence signing key is not configured. Set LICENCE_SIGNING_KEY.');
+
+        activity('licences')
+            ->performedOn($licence)
+            ->causedBy(auth()->user())
+            ->log('licence.exported');
+
+        return response(
+            Licence::exportFileJson($licence),
+            200,
+            [
+                'Content-Type' => 'application/json',
+                'Content-Disposition' => "attachment; filename=\"licence-{$deployment->uuid}.json\"",
+            ]
+        );
+    })->name('licences.export');
 });
 
 Route::middleware(['auth', 'verified', 'can:manage-catalogue'])->group(function () {

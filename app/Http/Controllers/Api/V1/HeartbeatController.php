@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreHeartbeatRequest;
+use App\Models\Licence;
 use Illuminate\Http\JsonResponse;
 
 class HeartbeatController extends Controller
@@ -41,26 +42,6 @@ class HeartbeatController extends Controller
 
         $licence = $deployment->latestLicence;
 
-        if ($licence === null || $licence->isExpired()) {
-            return response()->json([
-                'licence' => [
-                    'tier' => 'expired',
-                    'modules' => [],
-                    'caps' => new \stdClass,
-                    'valid_until' => now()->toIso8601String(),
-                ],
-                'directives' => [],
-            ]);
-        }
-
-        return response()->json([
-            'licence' => [
-                'tier' => 'standard',
-                'modules' => $licence->enabledKeys(),
-                'caps' => $licence->caps ?? [],
-                'valid_until' => $licence->expires_at?->toIso8601String() ?? now()->toIso8601String(),
-            ],
-            'directives' => [],
-        ]);
+        return response()->json(Licence::heartbeatResponse($licence));
     }
 }

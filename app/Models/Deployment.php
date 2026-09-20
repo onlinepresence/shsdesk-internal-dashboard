@@ -85,6 +85,14 @@ class Deployment extends Model implements AuthenticatableContract
     }
 
     /**
+     * Enrollment claim codes for this deployment, newest first.
+     */
+    public function enrollmentCodes(): HasMany
+    {
+        return $this->hasMany(EnrollmentCode::class)->latest();
+    }
+
+    /**
      * Newest licence row — the terms currently in force.
      */
     public function latestLicence(): HasOne
