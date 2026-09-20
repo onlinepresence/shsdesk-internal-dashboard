@@ -41,6 +41,7 @@ class DemoKey extends Model
     protected function casts(): array
     {
         return [
+            'scope' => 'array',
             'expires_at' => 'datetime',
             'revoked_at' => 'datetime',
             'last_used_at' => 'datetime',
@@ -48,17 +49,24 @@ class DemoKey extends Model
     }
 
     /**
-     * Scopes a key may carry: full access or exactly one live
-     * catalogue feature.
+     * Scopes a key may carry: full access on its own, or any set of
+     * live catalogue features — never mixed.
      *
      * @return list<string>
      */
     public static function validScopes(): array
     {
-        return array_merge(
-            [static::SCOPE_FULL],
-            Feature::query()->where('active', true)->orderBy('key')->pluck('key')->all()
-        );
+        return array_merge([static::SCOPE_FULL], array_keys(static::featureOptions()));
+    }
+
+    /**
+     * Live catalogue features offered as scopes, keyed by key.
+     *
+     * @return array<string, string>
+     */
+    public static function featureOptions(): array
+    {
+        return Feature::query()->where('active', true)->orderBy('key')->pluck('label', 'key')->all();
     }
 
     /**
@@ -126,9 +134,10 @@ class DemoKey extends Model
      * Mint a key and its first signed artifact. Only the hash is
      * stored — the code is shown once and never retained.
      *
+     * @param  list<string>  $scope  ['full'] alone, or catalogue feature keys.
      * @return array{record: DemoKey, code: string, document: array{payload: array<string, mixed>, signature: string, algorithm: string}}
      */
-    public static function mintFor(string $label, string $scope, ?string $expiresAt, ?string $host): array
+    public static function mintFor(string $label, array $scope, ?string $expiresAt, ?string $host): array
     {
         for ($attempt = 0; $attempt < 10; $attempt++) {
             $code = static::generateCode();

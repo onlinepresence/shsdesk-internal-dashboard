@@ -15,7 +15,10 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $label = '';
 
-    public string $scope = DemoKey::SCOPE_FULL;
+    public bool $fullAccess = true;
+
+    /** @var list<string> Catalogue feature keys, honoured unless full access is granted. */
+    public array $scope = [];
 
     public ?string $expires_at = null;
 
@@ -38,21 +41,20 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
-     * Scopes a key may carry: full access or exactly one live
-     * catalogue feature.
+     * Catalogue features offered as scopes, keyed by key.
      *
-     * @return list<string>
+     * @return array<string, string>
      */
     #[Computed]
     public function scopes(): array
     {
-        return DemoKey::validScopes();
+        return DemoKey::featureOptions();
     }
 
     public function openMintModal(): void
     {
-        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed', 'plainTextCode', 'mintedId']);
-        $this->scope = DemoKey::SCOPE_FULL;
+        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed', 'plainTextCode', 'mintedId', 'scope']);
+        $this->fullAccess = true;
         $this->never = false;
         $this->resetValidation();
         $this->dispatch('open-demo-form');
@@ -60,8 +62,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public function cancelMint(): void
     {
-        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed', 'plainTextCode', 'mintedId']);
-        $this->scope = DemoKey::SCOPE_FULL;
+        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed', 'plainTextCode', 'mintedId', 'scope']);
+        $this->fullAccess = true;
         $this->never = false;
         $this->resetValidation();
         $this->dispatch('close-demo-form');
@@ -83,7 +85,9 @@ new #[Layout('layouts.app')] class extends Component
 
         $validated = $this->validate([
             'label' => ['required', 'string', 'max:255'],
-            'scope' => ['required', 'string', Rule::in(DemoKey::validScopes())],
+            'fullAccess' => ['boolean'],
+            'scope' => ['array'],
+            'scope.*' => ['string', Rule::in(array_keys(DemoKey::featureOptions()))],
             'expires_at' => ['nullable', 'date', 'after:today'],
             'never' => ['boolean'],
             'host' => ['nullable', 'string', 'max:255'],
@@ -95,9 +99,19 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
+        if (! $this->fullAccess && empty($validated['scope'])) {
+            $this->addError('scope', __('Pick at least one feature, or grant full access.'));
+
+            return;
+        }
+
+        $finalScope = $this->fullAccess
+            ? [DemoKey::SCOPE_FULL]
+            : array_values(array_unique($validated['scope']));
+
         $minted = DemoKey::mintFor(
             $validated['label'],
-            $validated['scope'],
+            $finalScope,
             $this->never ? null : $validated['expires_at'],
             $validated['host'],
         );
@@ -112,8 +126,8 @@ new #[Layout('layouts.app')] class extends Component
             ])
             ->log('demo.minted');
 
-        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed']);
-        $this->scope = DemoKey::SCOPE_FULL;
+        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed', 'scope']);
+        $this->fullAccess = true;
         $this->never = false;
         $this->plainTextCode = $minted['code'];
         $this->mintedId = $minted['record']->id;
@@ -212,7 +226,18 @@ new #[Layout('layouts.app')] class extends Component
                                         <div class="font-mono text-xs text-slate-400 dark:text-slate-500">{{ substr($key->code_hash, 0, 10) }}…</div>
                                     </x-table.cell>
                                     <x-table.cell>
-                                        <x-badge :tone="$key->scope === App\Models\DemoKey::SCOPE_FULL ? 'active' : 'muted'">{{ $key->scope }}</x-badge>
+                                        @if ($key->scope === [App\Models\DemoKey::SCOPE_FULL])
+                                            <x-badge tone="active">Full access</x-badge>
+                                        @else
+                                            <span class="flex max-w-56 flex-wrap items-center gap-1">
+                                                @foreach (array_slice($key->scope ?? [], 0, 2) as $granted)
+                                                    <x-badge tone="muted">{{ $granted }}</x-badge>
+                                                @endforeach
+                                                @if (count($key->scope ?? []) > 2)
+                                                    <span class="text-xs text-slate-500 dark:text-slate-400">+{{ count($key->scope) - 2 }} more</span>
+                                                @endif
+                                            </span>
+                                        @endif
                                     </x-table.cell>
                                     <x-table.cell>{{ $key->expires_at?->format('M d, Y') ?? 'Never' }}</x-table.cell>
                                     <x-table.cell>{{ $key->host ?? '—' }}</x-table.cell>
@@ -262,12 +287,17 @@ new #[Layout('layouts.app')] class extends Component
                             <x-input-error :messages="$errors->get('label')" class="mt-2" />
                         </div>
                         <div>
-                            <x-input-label for="scope" :value="__('Scope')" />
-                            <x-select wire:model="scope" id="scope" name="scope" required class="mt-1 block w-full">
-                                @foreach ($this->scopes as $scopeOption)
-                                    <option value="{{ $scopeOption }}">{{ $scopeOption === App\Models\DemoKey::SCOPE_FULL ? 'Full access' : $scopeOption }}</option>
-                                @endforeach
-                            </x-select>
+                            <label class="flex cursor-pointer items-center gap-3">
+                                <input wire:model.live="fullAccess" type="checkbox" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                                <span class="min-w-0 flex-1">
+                                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ __('Full access') }}</span>
+                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ __('Every feature. Untick to pick features below.') }}</span>
+                                </span>
+                            </label>
+                        </div>
+                        <div>
+                            <x-input-label for="demo-scope" :value="__('Features')" />
+                            <x-multi-select model="scope" :options="$this->scopes" placeholder="Pick features…" :disabled="$fullAccess" />
                             <x-input-error :messages="$errors->get('scope')" class="mt-2" />
                         </div>
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
