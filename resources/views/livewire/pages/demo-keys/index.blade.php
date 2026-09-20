@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\DemoKey;
+use App\Models\Licence;
+use App\Support\EnvWriter;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
@@ -28,10 +30,56 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?int $deletingId = null;
 
+    public ?string $verificationKey = null;
+
     #[Computed]
     public function demoKeys(): LengthAwarePaginator
     {
         return DemoKey::query()->latest()->paginate(10);
+    }
+
+    /**
+     * Whether minting and exporting are blocked. Every document is
+     * signed, so nothing here works without the seed.
+     */
+    #[Computed]
+    public function signingKeyMissing(): bool
+    {
+        return empty(config('licence-export.signing_key'));
+    }
+
+    /**
+     * Generate the Ed25519 seed into .env. Super-admins only; the
+     * seed itself is never displayed — only derived keys leave here.
+     */
+    public function generateSigningKey(): void
+    {
+        $this->authorize('manage-catalogue');
+
+        $seed = bin2hex(random_bytes(32));
+
+        if (! app(EnvWriter::class)->ensurePresent('LICENCE_SIGNING_KEY', $seed)) {
+            $this->addError('signing_key', __('LICENCE_SIGNING_KEY is already set. Nothing was written.'));
+
+            return;
+        }
+
+        config()->set('licence-export.signing_key', $seed);
+
+        activity('demo')
+            ->causedBy(Auth::user())
+            ->log('demo.signing_key_generated');
+
+        unset($this->signingKeyMissing);
+    }
+
+    /**
+     * Reveal the public verification key for pasting into FlowEdu
+     * as DEMO_PUBLIC_KEY. Public by design — safe to display.
+     */
+    public function showVerificationKey(): void
+    {
+        $this->verificationKey = Licence::verificationKeyHex();
     }
 
     public function openMintModal(): void
@@ -59,6 +107,12 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function mint(): void
     {
+        if ($this->signingKeyMissing) {
+            $this->addError('signing_key', __('Set LICENCE_SIGNING_KEY before minting — generate one above or set it server-side.'));
+
+            return;
+        }
+
         if ($this->expires_at === '') {
             $this->expires_at = null;
         }
@@ -151,6 +205,11 @@ new #[Layout('layouts.app')] class extends Component
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6">
             <x-section-title title="Demo keys" subtitle="Signed demo credentials. Validity and host binding live inside the signature — verifiers trust nothing else.">
+                @if (! $this->signingKeyMissing)
+                    <x-secondary-button type="button" wire:click="showVerificationKey" wire:loading.attr="disabled" wire:target="showVerificationKey">
+                        {{ __('Show verification key') }}
+                    </x-secondary-button>
+                @endif
                 <x-primary-button type="button" wire:click="openMintModal">
                     {{ __('Mint key') }}
                 </x-primary-button>
@@ -158,12 +217,34 @@ new #[Layout('layouts.app')] class extends Component
 
             <x-alert flash="status" tone="success" />
 
+            @if ($this->signingKeyMissing)
+                <x-alert tone="warn" title="Signing key missing" :dismissible="false">
+                    {{ __('Minting and exporting sign every document with LICENCE_SIGNING_KEY, which is not set. Nothing here can mint or export until it exists.') }}
+                    <x-slot name="actions">
+                        @can('manage-catalogue')
+                            <x-secondary-button type="button" wire:click="generateSigningKey" wire:loading.attr="disabled" wire:target="generateSigningKey">
+                                <span wire:loading.remove wire:target="generateSigningKey">{{ __('Generate signing key') }}</span>
+                                <span wire:loading wire:target="generateSigningKey">{{ __('Generating…') }}</span>
+                            </x-secondary-button>
+                        @endcan
+                    </x-slot>
+                    <x-input-error :messages="$errors->get('signing_key')" class="mt-2" />
+                </x-alert>
+            @elseif ($verificationKey !== null)
+                <x-alert tone="info" title="Verification key — paste into FlowEdu as DEMO_PUBLIC_KEY" :dismissible="false">
+                    <div x-data="{ copied: false }" class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <code x-ref="verifykey" class="min-w-0 flex-1 break-all font-mono text-sm">{{ $verificationKey }}</code>
+                        <x-secondary-button type="button" @click="navigator.clipboard.writeText($refs.verifykey.innerText.trim()); copied = true" x-text="copied ? 'Copied' : 'Copy'" />
+                    </div>
+                </x-alert>
+            @endif
+
             @if ($plainTextCode !== null)
                 <x-alert tone="warn" title="New key minted — copy it now" :dismissible="false">
                     <div x-data="{ copied: false }" class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                         <code x-ref="code" class="min-w-0 flex-1 break-all font-mono text-sm">{{ $plainTextCode }}</code>
                         <x-secondary-button type="button" @click="navigator.clipboard.writeText($refs.code.innerText.trim()); copied = true" x-text="copied ? 'Copied' : 'Copy'" />
-                        @if ($mintedId !== null)
+                        @if ($mintedId !== null && ! $this->signingKeyMissing)
                             <x-button-link :href="route('demo-keys.download', $mintedId)" variant="tertiary">
                                 {{ __('Download file') }}
                             </x-button-link>
@@ -200,9 +281,11 @@ new #[Layout('layouts.app')] class extends Component
                                     </x-table.cell>
                                     <x-table.cell>
                                         <span class="flex items-center gap-2">
-                                            <x-button-link :href="route('demo-keys.download', $key)" variant="tertiary">
-                                                {{ __('Download') }}
-                                            </x-button-link>
+                                            @if (! $this->signingKeyMissing)
+                                                <x-button-link :href="route('demo-keys.download', $key)" variant="tertiary">
+                                                    {{ __('Download') }}
+                                                </x-button-link>
+                                            @endif
                                             @if (! $key->isRevoked())
                                                 <button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'demo-delete'); $wire.set('deletingId', {{ $key->id }})" class="text-sm font-medium text-red-500 underline hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
                                                     {{ __('Revoke') }}
@@ -264,11 +347,18 @@ new #[Layout('layouts.app')] class extends Component
                         <x-tertiary-button type="button" wire:click="cancelMint" x-on:click="$dispatch('close')">
                             {{ __('Cancel') }}
                         </x-tertiary-button>
-                        <x-primary-button wire:loading.attr="disabled" wire:target="mint">
-                            <span wire:loading.remove wire:target="mint">{{ __('Mint key') }}</span>
-                            <span wire:loading wire:target="mint">{{ __('Minting…') }}</span>
-                        </x-primary-button>
+                        @if ($this->signingKeyMissing)
+                            <x-primary-button type="button" disabled>
+                                <span>{{ __('Mint key') }}</span>
+                            </x-primary-button>
+                        @else
+                            <x-primary-button wire:loading.attr="disabled" wire:target="mint">
+                                <span wire:loading.remove wire:target="mint">{{ __('Mint key') }}</span>
+                                <span wire:loading wire:target="mint">{{ __('Minting…') }}</span>
+                            </x-primary-button>
+                        @endif
                     </div>
+                    <x-input-error :messages="$errors->get('signing_key')" class="mt-2" />
                 </form>
             </x-modal>
 

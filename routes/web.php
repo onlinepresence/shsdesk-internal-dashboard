@@ -41,6 +41,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('demo-keys.index');
 
     Route::get('demo-keys/{demoKey}/download', function (DemoKey $demoKey) {
+        abort_if(empty(config('licence-export.signing_key')), 422, 'Licence signing key is not configured. Set LICENCE_SIGNING_KEY.');
+
         activity('demo')
             ->performedOn($demoKey)
             ->causedBy(auth()->user())
@@ -90,7 +92,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         $licence = $deployment->latestLicence;
 
         abort_if($licence === null || $licence->isExpired(), 404);
-        abort_if(empty(config('licence-export.signing_key')), 500, 'Licence signing key is not configured. Set LICENCE_SIGNING_KEY.');
+        abort_if(empty(config('licence-export.signing_key')), 422, 'Licence signing key is not configured. Set LICENCE_SIGNING_KEY.');
 
         $deployment->update(['file_managed_at' => now()]);
 
