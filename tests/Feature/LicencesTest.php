@@ -6,6 +6,7 @@ use App\Models\Licence;
 use App\Models\Setting;
 use App\Models\User;
 use Database\Seeders\CatalogueSeeder;
+use Database\Seeders\ProductSeeder;
 use Database\Seeders\SettingsSeeder;
 use Livewire\Volt\Volt;
 use Spatie\Activitylog\Models\Activity;
@@ -14,6 +15,7 @@ use Spatie\Permission\Models\Role;
 beforeEach(function () {
     $this->seed(CatalogueSeeder::class);
     $this->seed(SettingsSeeder::class);
+    $this->seed(ProductSeeder::class);
 });
 
 function actingSuperAdmin(): User

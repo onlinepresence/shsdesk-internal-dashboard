@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['product', 'school_name', 'url', 'app_version', 'last_seen_at', 'revoked_at'])]
+#[Fillable(['product', 'school_name', 'url', 'app_version', 'last_seen_at', 'revoked_at', 'file_managed_at'])]
 class Deployment extends Model implements AuthenticatableContract
 {
     /** @use HasFactory<DeploymentFactory> */
@@ -41,6 +41,7 @@ class Deployment extends Model implements AuthenticatableContract
         return [
             'last_seen_at' => 'datetime',
             'revoked_at' => 'datetime',
+            'file_managed_at' => 'datetime',
         ];
     }
 
@@ -94,6 +95,15 @@ class Deployment extends Model implements AuthenticatableContract
     }
 
     /**
+     * Whether the deployment is served by an exported licence file.
+     * Set on export, cleared on the next heartbeat.
+     */
+    public function isFileManaged(): bool
+    {
+        return $this->file_managed_at !== null;
+    }
+
+    /**
      * Deployments still allowed to check in.
      */
     #[Scope]
@@ -109,18 +119,29 @@ class Deployment extends Model implements AuthenticatableContract
     }
 
     /**
-     * Deployments silent for longer than the stale window.
+     * Deployments silent for longer than the stale window, excluding
+     * air-gap file-managed rows whose silence is expected.
      */
     #[Scope]
     protected function stale(Builder $query): Builder
     {
-        return $query->whereNull('revoked_at')->where(function (Builder $query): void {
+        return $query->whereNull('revoked_at')->whereNull('file_managed_at')->where(function (Builder $query): void {
             $query->where('last_seen_at', '<', static::staleThreshold())
                 ->orWhere(function (Builder $query): void {
                     $query->whereNull('last_seen_at')
                         ->where('created_at', '<', static::staleThreshold());
                 });
         });
+    }
+
+    /**
+     * Deployments served by an exported licence file instead of
+     * heartbeats.
+     */
+    #[Scope]
+    protected function fileManaged(Builder $query): Builder
+    {
+        return $query->whereNotNull('file_managed_at');
     }
 
     /**

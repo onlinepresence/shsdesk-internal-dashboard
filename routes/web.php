@@ -72,6 +72,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         abort_if($licence === null || $licence->isExpired(), 404);
         abort_if(empty(config('licence-export.signing_key')), 500, 'Licence signing key is not configured. Set LICENCE_SIGNING_KEY.');
 
+        $deployment->update(['file_managed_at' => now()]);
+
         activity('licences')
             ->performedOn($licence)
             ->causedBy(auth()->user())

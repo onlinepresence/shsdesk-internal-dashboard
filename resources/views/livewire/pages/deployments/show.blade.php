@@ -189,7 +189,12 @@ new #[Layout('layouts.app')] class extends Component
             <x-card>
                 <x-slot name="title">Instance</x-slot>
                 <x-slot name="actions">
-                    <x-badge :tone="$this->statusTone($deployment->status)">{{ ucfirst($deployment->status) }}</x-badge>
+                    <span class="flex items-center gap-2">
+                        @if ($deployment->isFileManaged())
+                            <x-badge tone="muted">File-managed</x-badge>
+                        @endif
+                        <x-badge :tone="$this->statusTone($deployment->status)">{{ ucfirst($deployment->status) }}</x-badge>
+                    </span>
                 </x-slot>
                 <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>

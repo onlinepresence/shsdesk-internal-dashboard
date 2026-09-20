@@ -22,6 +22,15 @@ class HeartbeatController extends Controller
             'last_seen_at' => now(),
         ]);
 
+        if ($deployment->file_managed_at !== null) {
+            $deployment->update(['file_managed_at' => null]);
+
+            activity('deployments')
+                ->performedOn($deployment)
+                ->causedBy($deployment)
+                ->log('deployment.file_managed_cleared');
+        }
+
         $deployment->heartbeats()->create([
             'app_version' => $validated['app_version'],
             'students' => $validated['counts']['students'],

@@ -1,9 +1,18 @@
 <?php
 
 use App\Models\Deployment;
+use App\Models\EnrollmentCode;
+use App\Models\Licence;
+use App\Models\Product;
 use App\Models\User;
+use Database\Seeders\ProductSeeder;
 use Laravel\Sanctum\Sanctum;
 use Livewire\Volt\Volt;
+use Spatie\Activitylog\Models\Activity;
+
+beforeEach(function () {
+    $this->seed(ProductSeeder::class);
+});
 
 function heartbeatPayload(Deployment $deployment, array $overrides = []): array
 {
@@ -155,6 +164,96 @@ test('stale scope matches silent deployments only', function () {
     expect($fresh->status)->toBe('active')
         ->and($stale->status)->toBe('stale')
         ->and($revoked->status)->toBe('revoked');
+});
+
+test('heartbeat rejects a product claim mismatching the deployment', function () {
+    $deployment = Deployment::factory()->create(['product' => 'flowedu']);
+    $other = Product::factory()->create(['active' => true]);
+    $token = issueHeartbeatToken($deployment);
+
+    $this->withHeaders(['Authorization' => "Bearer {$token}"])
+        ->postJson('/api/v1/heartbeats', heartbeatPayload($deployment, ['product' => $other->slug]))
+        ->assertForbidden();
+});
+
+test('heartbeat rejects deployments on inactive products', function () {
+    $deployment = Deployment::factory()->create(['product' => 'shsdesk']);
+    $token = issueHeartbeatToken($deployment);
+
+    $this->withHeaders(['Authorization' => "Bearer {$token}"])
+        ->postJson('/api/v1/heartbeats', heartbeatPayload($deployment, ['product' => 'shsdesk']))
+        ->assertForbidden();
+});
+
+test('enroll rejects a mismatched product claim', function () {
+    $deployment = Deployment::factory()->create(['product' => 'flowedu']);
+    $other = Product::factory()->create(['active' => true]);
+    $code = EnrollmentCode::mintFor($deployment)['code'];
+
+    $this->postJson('/api/v1/enroll', [
+        'code' => $code,
+        'deployment_uuid' => $deployment->uuid,
+        'product' => $other->slug,
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error', 'product_mismatch');
+});
+
+test('enroll rejects inactive products', function () {
+    $deployment = Deployment::factory()->create(['product' => 'shsdesk']);
+    $code = EnrollmentCode::mintFor($deployment)['code'];
+
+    $this->postJson('/api/v1/enroll', ['code' => $code])
+        ->assertUnprocessable()
+        ->assertJsonPath('error', 'product_inactive');
+});
+
+test('export marks file-managed and the first heartbeat clears it', function () {
+    config()->set('licence-export.signing_key', str_repeat('a', 64));
+
+    $this->actingAs(User::factory()->create());
+
+    $deployment = Deployment::factory()->create();
+    Licence::factory()->for($deployment)->create();
+
+    $this->get(route('licences.export', $deployment->uuid))
+        ->assertOk()
+        ->assertHeader('content-disposition', 'attachment; filename="licence-'.$deployment->uuid.'.json"');
+
+    expect($deployment->fresh()->isFileManaged())->toBeTrue();
+    $this->assertDatabaseHas('activity_log', ['description' => 'licence.exported']);
+
+    $this->get(route('deployments.show', $deployment))
+        ->assertOk()
+        ->assertSee('File-managed');
+
+    $token = issueHeartbeatToken($deployment);
+
+    // Heartbeat callers never hold a web session; Sanctum prefers the
+    // session user over the bearer token, so log out first.
+    auth()->logout();
+
+    $this->withHeaders(['Authorization' => "Bearer {$token}"])
+        ->postJson('/api/v1/heartbeats', heartbeatPayload($deployment))
+        ->assertOk();
+
+    expect($deployment->fresh()->isFileManaged())->toBeFalse();
+    $this->assertDatabaseHas('activity_log', ['description' => 'deployment.file_managed_cleared']);
+
+    $this->withHeaders(['Authorization' => "Bearer {$token}"])
+        ->postJson('/api/v1/heartbeats', heartbeatPayload($deployment))
+        ->assertOk();
+
+    expect(Activity::where('description', 'deployment.file_managed_cleared')->count())->toBe(1);
+});
+
+test('stale scope excludes file-managed deployments', function () {
+    $managed = Deployment::factory()->stale()->create(['file_managed_at' => now()->subDay()]);
+    $stale = Deployment::factory()->stale()->create();
+
+    $staleIds = Deployment::stale()->pluck('id')->all();
+
+    expect($staleIds)->toContain($stale->id)->not->toContain($managed->id);
 });
 
 test('deployment pages render for authenticated users', function () {
