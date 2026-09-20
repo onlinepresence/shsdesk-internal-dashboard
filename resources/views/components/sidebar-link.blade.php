@@ -9,6 +9,7 @@ $iconComponents = [
     'key' => 'lucide-key-round',
     'package' => 'lucide-package',
     'inbox' => 'lucide-inbox',
+    'ticket' => 'lucide-ticket',
     'receipt' => 'lucide-receipt',
     'sliders' => 'lucide-sliders-horizontal',
 ];

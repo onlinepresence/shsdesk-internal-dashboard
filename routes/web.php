@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\DemoKey;
 use App\Models\Deployment;
 use App\Models\Invoice;
 use App\Models\Licence;
@@ -35,6 +36,25 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Volt::route('leads', 'pages.leads.index')
         ->name('leads.index');
+
+    Volt::route('demo-keys', 'pages.demo-keys.index')
+        ->name('demo-keys.index');
+
+    Route::get('demo-keys/{demoKey}/download', function (DemoKey $demoKey) {
+        activity('demo')
+            ->performedOn($demoKey)
+            ->causedBy(auth()->user())
+            ->log('demo.downloaded');
+
+        return response(
+            json_encode($demoKey->buildDocument(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            200,
+            [
+                'Content-Type' => 'application/json',
+                'Content-Disposition' => 'attachment; filename="demo-key-'.$demoKey->id.'.json"',
+            ]
+        );
+    })->name('demo-keys.download');
 
     Volt::route('invoices', 'pages.invoices.index')
         ->name('invoices.index');

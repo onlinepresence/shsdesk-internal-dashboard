@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\DemoKeyController;
 use App\Http\Controllers\Api\V1\EnrollController;
 use App\Http\Controllers\Api\V1\HeartbeatController;
 use App\Http\Controllers\Api\V1\LeadsController;
@@ -16,3 +17,7 @@ Route::post('v1/enroll', EnrollController::class)
 Route::post('v1/leads', LeadsController::class)
     ->middleware(['throttle:10,1', 'throttle:leads-global'])
     ->name('api.v1.leads');
+
+Route::post('v1/demo-keys/verify', DemoKeyController::class)
+    ->middleware(['throttle:20,1', 'throttle:demo-global'])
+    ->name('api.v1.demo-keys.verify');

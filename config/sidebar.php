@@ -41,6 +41,7 @@ return [
             'items' => [
                 ['label' => 'Products', 'route' => 'products.index', 'icon' => 'package'],
                 ['label' => 'Leads', 'route' => 'leads.index', 'icon' => 'inbox'],
+                ['label' => 'Demo keys', 'route' => 'demo-keys.index', 'icon' => 'ticket'],
             ],
         ],
     ],

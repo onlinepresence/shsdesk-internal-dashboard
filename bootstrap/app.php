@@ -29,6 +29,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
 $app->booting(function (): void {
     RateLimiter::for('enroll-global', fn (): Limit => Limit::perMinute(600));
     RateLimiter::for('leads-global', fn (): Limit => Limit::perMinute(300));
+    RateLimiter::for('demo-global', fn (): Limit => Limit::perMinute(600));
 });
 
 return $app;
