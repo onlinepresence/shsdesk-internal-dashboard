@@ -1,0 +1,214 @@
+<?php
+
+use App\Models\Lead;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Layout;
+use Livewire\Volt\Component;
+use Livewire\WithPagination;
+
+new #[Layout('layouts.app')] class extends Component
+{
+    use WithPagination;
+
+    public string $status = 'open';
+
+    public ?int $deletingId = null;
+
+    public function updatedStatus(): void
+    {
+        $this->resetPage();
+    }
+
+    #[Computed]
+    public function leads(): LengthAwarePaginator
+    {
+        return Lead::query()
+            ->with('product')
+            ->when($this->status === 'open', fn ($query): Builder => $query->whereIn('status', [Lead::STATUS_NEW, Lead::STATUS_REVIEWED]))
+            ->when(in_array($this->status, [Lead::STATUS_NEW, Lead::STATUS_REVIEWED, Lead::STATUS_CONVERTED], true), fn ($query): Builder => $query->where('status', $this->status))
+            ->latest()
+            ->paginate(10);
+    }
+
+    public function statusTone(string $status): string
+    {
+        return match ($status) {
+            Lead::STATUS_NEW => 'active',
+            Lead::STATUS_REVIEWED => 'warn',
+            Lead::STATUS_CONVERTED => 'success',
+            default => 'muted',
+        };
+    }
+
+    /**
+     * Mark a fresh lead as human-reviewed. Spam never converts —
+     * delete it instead.
+     */
+    public function markReviewed(int $id): void
+    {
+        $lead = Lead::findOrFail($id);
+
+        if ($lead->status !== Lead::STATUS_NEW) {
+            return;
+        }
+
+        $lead->update(['status' => Lead::STATUS_REVIEWED]);
+
+        activity('leads')
+            ->performedOn($lead)
+            ->causedBy(Auth::user())
+            ->log('lead.reviewed');
+    }
+
+    /**
+     * Stage the quote snapshot for registration and hand over to the
+     * registration page. Registration and licence pages pre-fill
+     * from it unchanged.
+     */
+    public function convert(int $id): void
+    {
+        $lead = Lead::findOrFail($id);
+
+        session([
+            'lead_prefill' => [
+                'lead_id' => $lead->id,
+                'school_name' => $lead->school ?? $lead->contact_name,
+                'product' => $lead->product->slug,
+                'modules' => $lead->modules ?? [],
+                'band' => $lead->band,
+            ],
+        ]);
+
+        $this->redirect(route('deployments.create'), navigate: true);
+    }
+
+    public function cancelDelete(): void
+    {
+        $this->reset(['deletingId']);
+        $this->resetValidation();
+        $this->dispatch('close-lead-delete');
+    }
+
+    /**
+     * Drop a spam or dead lead from the queue.
+     */
+    public function delete(): void
+    {
+        $lead = Lead::findOrFail($this->deletingId);
+
+        $lead->delete();
+
+        activity('leads')
+            ->causedBy(Auth::user())
+            ->withProperties(['lead_id' => $lead->id, 'contact_email' => $lead->contact_email])
+            ->log('lead.deleted');
+
+        $this->reset(['deletingId']);
+        $this->dispatch('close-lead-delete');
+
+        session()->flash('status', __('Lead deleted.'));
+    }
+}; ?>
+
+<div class="py-12" x-data="{}" x-on:open-lead-delete.window="$dispatch('open-modal', 'lead-delete')" x-on:close-lead-delete.window="$dispatch('close-modal', 'lead-delete')">
+    <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
+        <div class="mb-6 flex flex-col gap-6">
+            <x-section-title title="Leads" subtitle="Quote requests awaiting human review. Spam stays here — it never becomes access." />
+
+            <x-alert flash="status" tone="success" />
+
+            <x-card>
+                <div class="mb-4 flex flex-col gap-2 sm:flex-row">
+                    <x-select wire:model.live="status" aria-label="Filter by status" class="block w-full sm:w-auto">
+                        <option value="open">Open queue</option>
+                        <option value="new">New</option>
+                        <option value="reviewed">Reviewed</option>
+                        <option value="converted">Converted</option>
+                        <option value="all">All</option>
+                    </x-select>
+                </div>
+
+                <x-table>
+                    <x-table.head>
+                        <x-table.row :hover="false">
+                            <x-table.heading>Received</x-table.heading>
+                            <x-table.heading>School</x-table.heading>
+                            <x-table.heading>Product</x-table.heading>
+                            <x-table.heading>Band</x-table.heading>
+                            <x-table.heading>Upfront</x-table.heading>
+                            <x-table.heading>Status</x-table.heading>
+                            <x-table.heading><span class="sr-only">Actions</span></x-table.heading>
+                        </x-table.row>
+                    </x-table.head>
+                    @if ($this->leads->isNotEmpty())
+                        <x-table.body>
+                            @foreach ($this->leads as $lead)
+                                <x-table.row>
+                                    <x-table.cell>{{ $lead->created_at->diffForHumans() }}</x-table.cell>
+                                    <x-table.cell>
+                                        <div class="font-medium text-slate-900 dark:text-white">{{ $lead->school ?? $lead->contact_name }}</div>
+                                        <div class="text-xs text-slate-400 dark:text-slate-500">{{ $lead->contact_email }}</div>
+                                    </x-table.cell>
+                                    <x-table.cell>{{ $lead->product?->slug ?? '—' }}</x-table.cell>
+                                    <x-table.cell>{{ $lead->band }}</x-table.cell>
+                                    <x-table.cell>{{ number_format((float) $lead->quote_upfront, 2) }}</x-table.cell>
+                                    <x-table.cell>
+                                        <x-badge :tone="$this->statusTone($lead->status)">{{ ucfirst($lead->status) }}</x-badge>
+                                    </x-table.cell>
+                                    <x-table.cell>
+                                        <span class="flex items-center gap-2">
+                                            @if ($lead->status !== Lead::STATUS_CONVERTED)
+                                                <x-tertiary-button type="button" wire:click="convert({{ $lead->id }})">
+                                                    {{ __('Convert') }}
+                                                </x-tertiary-button>
+                                            @endif
+                                            @if ($lead->status === Lead::STATUS_NEW)
+                                                <x-tertiary-button type="button" wire:click="markReviewed({{ $lead->id }})">
+                                                    {{ __('Reviewed') }}
+                                                </x-tertiary-button>
+                                            @endif
+                                            <button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'lead-delete'); $wire.set('deletingId', {{ $lead->id }})" class="text-sm font-medium text-red-500 underline hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
+                                                {{ __('Delete') }}
+                                            </button>
+                                        </span>
+                                    </x-table.cell>
+                                </x-table.row>
+                            @endforeach
+                        </x-table.body>
+                    @else
+                        <x-table.empty>
+                            <x-empty-state title="No leads in this view" message="Quote requests from product sites land here for review." />
+                        </x-table.empty>
+                    @endif
+                </x-table>
+
+                <div class="mt-4">
+                    {{ $this->leads->links() }}
+                </div>
+            </x-card>
+
+            <x-modal name="lead-delete" focusable>
+                <form wire:submit="delete" class="p-6">
+                    <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                        {{ __('Delete this lead?') }}
+                    </h2>
+                    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                        {{ __('The quote request leaves the queue. This cannot be undone.') }}
+                    </p>
+                    <div class="mt-6 flex justify-end">
+                        <x-secondary-button type="button" wire:click="cancelDelete">
+                            {{ __('Cancel') }}
+                        </x-secondary-button>
+                        <x-danger-button class="ms-3" wire:loading.attr="disabled" wire:target="delete">
+                            <span wire:loading.remove wire:target="delete">{{ __('Delete') }}</span>
+                            <span wire:loading wire:target="delete">{{ __('Deleting…') }}</span>
+                        </x-danger-button>
+                    </div>
+                </form>
+            </x-modal>
+        </div>
+    </div>
+</div>

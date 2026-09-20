@@ -33,6 +33,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Volt::route('products', 'pages.products.index')
         ->name('products.index');
 
+    Volt::route('leads', 'pages.leads.index')
+        ->name('leads.index');
+
     Volt::route('invoices', 'pages.invoices.index')
         ->name('invoices.index');
 

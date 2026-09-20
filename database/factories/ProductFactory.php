@@ -20,8 +20,6 @@ class ProductFactory extends Factory
         return [
             'name' => ucfirst($this->faker->unique()->word()).' Suite',
             'slug' => $this->faker->unique()->slug(2),
-            'api_key_hash' => null,
-            'api_key_encrypted' => null,
             'active' => true,
         ];
     }

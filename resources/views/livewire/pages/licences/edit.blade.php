@@ -65,6 +65,17 @@ new #[Layout('layouts.app')] class extends Component
             $this->migration = false;
             $this->student_band = null;
 
+            $prefill = session()->pull('licence_prefill_'.$deployment->id);
+
+            if (is_array($prefill)) {
+                $this->modules = array_values(array_intersect($prefill['modules'] ?? [], $this->moduleKeys(false)));
+
+                if (in_array($prefill['band'] ?? null, $this->bandKeys(), true)) {
+                    $this->student_band = $prefill['band'];
+                    $this->updatedStudentBand();
+                }
+            }
+
             return;
         }
 

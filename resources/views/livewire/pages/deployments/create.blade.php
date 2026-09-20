@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Deployment;
+use App\Models\Lead;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -19,6 +20,24 @@ new #[Layout('layouts.app')] class extends Component
     public ?string $plainTextToken = null;
 
     public ?Deployment $createdDeployment = null;
+
+    /**
+     * Pre-fill from a converted lead without changing the form.
+     */
+    public function mount(): void
+    {
+        $prefill = session('lead_prefill');
+
+        if (! is_array($prefill)) {
+            return;
+        }
+
+        $this->school_name = (string) ($prefill['school_name'] ?? '');
+
+        if (isset($prefill['product'])) {
+            $this->product = (string) $prefill['product'];
+        }
+    }
 
     /**
      * Products a deployment may register under, live from the table.
@@ -45,6 +64,27 @@ new #[Layout('layouts.app')] class extends Component
         $deployment = Deployment::create($validated);
 
         $token = $deployment->createToken('heartbeat', [Deployment::HEARTBEAT_ABILITY]);
+
+        if (session()->has('lead_prefill')) {
+            $prefill = session('lead_prefill');
+
+            session([
+                'licence_prefill_'.$deployment->id => [
+                    'modules' => $prefill['modules'] ?? [],
+                    'band' => $prefill['band'] ?? null,
+                ],
+            ]);
+            session()->forget('lead_prefill');
+
+            if (isset($prefill['lead_id'])) {
+                Lead::whereKey($prefill['lead_id'])->update(['status' => Lead::STATUS_CONVERTED]);
+
+                activity('leads')
+                    ->causedBy(Auth::user())
+                    ->withProperties(['deployment_id' => $deployment->id])
+                    ->log('lead.converted');
+            }
+        }
 
         activity('deployments')
             ->performedOn($deployment)

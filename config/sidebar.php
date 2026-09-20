@@ -40,6 +40,7 @@ return [
             'section' => 'Products',
             'items' => [
                 ['label' => 'Products', 'route' => 'products.index', 'icon' => 'package'],
+                ['label' => 'Leads', 'route' => 'leads.index', 'icon' => 'inbox'],
             ],
         ],
     ],

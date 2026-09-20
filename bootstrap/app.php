@@ -28,6 +28,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
 // Per-IP protection comes from the inline throttle on the route.
 $app->booting(function (): void {
     RateLimiter::for('enroll-global', fn (): Limit => Limit::perMinute(600));
+    RateLimiter::for('leads-global', fn (): Limit => Limit::perMinute(300));
 });
 
 return $app;
