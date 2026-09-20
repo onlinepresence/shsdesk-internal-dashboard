@@ -24,13 +24,6 @@ class Deployment extends Model implements AuthenticatableContract
     use Authenticatable, HasApiTokens, HasFactory;
 
     /**
-     * Products that may register a deployment.
-     *
-     * @var list<string>
-     */
-    public const PRODUCTS = ['flowedu'];
-
-    /**
      * Sanctum ability guarding the heartbeat endpoint.
      */
     public const HEARTBEAT_ABILITY = 'heartbeat';

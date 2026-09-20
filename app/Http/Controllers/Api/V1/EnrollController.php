@@ -7,6 +7,7 @@ use App\Http\Requests\EnrollRequest;
 use App\Models\Deployment;
 use App\Models\EnrollmentCode;
 use App\Models\Licence;
+use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 
 class EnrollController extends Controller
@@ -66,6 +67,14 @@ class EnrollController extends Controller
                 return $this->rejected('This claim code belongs to a different deployment.', 'deployment_mismatch');
             }
 
+            $productRejection = $this->productRejection($deployment, $validated['product'] ?? null);
+
+            if ($productRejection !== null) {
+                $this->logFailed($record, $productRejection[0]);
+
+                return $this->rejected($productRejection[1], $productRejection[0]);
+            }
+
             activity('enrollment')
                 ->performedOn($record)
                 ->causedBy($deployment)
@@ -114,6 +123,14 @@ class EnrollController extends Controller
             return $this->rejected('This deployment was revoked.', 'deployment_revoked');
         }
 
+        $productRejection = $this->productRejection($deployment, $validated['product'] ?? null);
+
+        if ($productRejection !== null) {
+            $this->logFailed($record, $productRejection[0]);
+
+            return $this->rejected($productRejection[1], $productRejection[0]);
+        }
+
         $record->markConsumed();
 
         $deployment->update(array_filter([
@@ -136,6 +153,27 @@ class EnrollController extends Controller
     }
 
     /**
+     * Reject a claimed product that mismatches the code-resolved
+     * deployment, or a deployment whose product is unknown/inactive.
+     *
+     * @return array{string, string}|null [reason, message]
+     */
+    protected function productRejection(Deployment $deployment, ?string $claimedProduct): ?array
+    {
+        if ($claimedProduct !== null && $claimedProduct !== $deployment->product) {
+            return ['product_mismatch', 'The claimed product does not match this deployment.'];
+        }
+
+        $product = Product::where('slug', $deployment->product)->first();
+
+        if ($product === null || ! $product->isActive()) {
+            return ['product_inactive', 'This product is not active.'];
+        }
+
+        return null;
+    }
+
+    /**
      * Log a rejected presentation against its code row.
      *
      * @param  array<string, mixed>  $properties
@@ -145,7 +183,8 @@ class EnrollController extends Controller
         activity('enrollment')
             ->performedOn($record)
             ->causedBy($record->deployment)
-            ->log('enrollment.redeem_failed', array_merge(['reason' => $reason], $properties));
+            ->withProperties(array_merge(['reason' => $reason], $properties))
+            ->log('enrollment.redeem_failed');
     }
 
     /**

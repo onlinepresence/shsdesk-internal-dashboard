@@ -36,6 +36,12 @@ return [
                 ['label' => 'Catalogue', 'route' => 'catalogue.index', 'icon' => 'sliders', 'can' => 'manage-catalogue'],
             ],
         ],
+        [
+            'section' => 'Products',
+            'items' => [
+                ['label' => 'Products', 'route' => 'products.index', 'icon' => 'package'],
+            ],
+        ],
     ],
 
 ];

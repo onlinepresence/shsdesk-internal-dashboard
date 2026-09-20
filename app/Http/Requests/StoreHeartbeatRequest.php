@@ -3,9 +3,9 @@
 namespace App\Http\Requests;
 
 use App\Models\Deployment;
+use App\Models\Product;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class StoreHeartbeatRequest extends FormRequest
 {
@@ -13,13 +13,22 @@ class StoreHeartbeatRequest extends FormRequest
 
     /**
      * The token must belong to the reported deployment, carry the
-     * heartbeat ability, and the deployment must not be revoked.
+     * heartbeat ability, and the deployment must not be revoked. The
+     * claimed product must match the token-resolved deployment and
+     * resolve to an active product — inactive products authenticate
+     * nothing.
      */
     public function authorize(): bool
     {
         $deployment = $this->deployment();
 
         if ($deployment === null || $deployment->revoked_at !== null) {
+            return false;
+        }
+
+        $product = Product::where('slug', $this->input('product'))->first();
+
+        if ($product === null || ! $product->isActive() || $deployment->product !== $product->slug) {
             return false;
         }
 
@@ -51,7 +60,7 @@ class StoreHeartbeatRequest extends FormRequest
     {
         return [
             'deployment_uuid' => ['required', 'uuid', 'exists:deployments,uuid'],
-            'product' => ['required', 'string', Rule::in(Deployment::PRODUCTS)],
+            'product' => ['required', 'string', 'exists:products,slug'],
             'app_version' => ['required', 'string', 'max:64'],
             'counts' => ['required', 'array:students,teachers,users'],
             'counts.students' => ['required', 'integer', 'min:0'],

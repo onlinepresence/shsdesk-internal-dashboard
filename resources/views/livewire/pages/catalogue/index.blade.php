@@ -471,9 +471,9 @@ new #[Layout('layouts.app')] class extends Component
                                         <x-tertiary-button type="button" wire:click="edit({{ $feature->id }})">
                                             {{ __('Edit') }}
                                         </x-tertiary-button>
-                                        <button type="button" wire:click="toggleActive({{ $feature->id }})" class="text-sm font-medium text-brand underline hover:text-deep dark:text-slate-200 dark:hover:text-white">
+                                        <x-tertiary-button type="button" wire:click="toggleActive({{ $feature->id }})">
                                             {{ $feature->active ? __('Deactivate') : __('Activate') }}
-                                        </button>
+                                        </x-tertiary-button>
                                     </span>
                                 </x-table.cell>
                             </x-table.row>

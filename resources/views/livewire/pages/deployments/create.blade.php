@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\Deployment;
+use App\Models\Product;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\Rule;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -19,13 +21,24 @@ new #[Layout('layouts.app')] class extends Component
     public ?Deployment $createdDeployment = null;
 
     /**
+     * Products a deployment may register under, live from the table.
+     *
+     * @return Collection<int, Product>
+     */
+    #[Computed]
+    public function products(): Collection
+    {
+        return Product::orderBy('name')->get();
+    }
+
+    /**
      * Register a deployment and issue its first heartbeat token.
      */
     public function register(): void
     {
         $validated = $this->validate([
             'school_name' => ['required', 'string', 'max:255'],
-            'product' => ['required', 'string', Rule::in(Deployment::PRODUCTS)],
+            'product' => ['required', 'string', 'exists:products,slug'],
             'url' => ['required', 'url', 'max:2048'],
         ]);
 
@@ -80,8 +93,8 @@ new #[Layout('layouts.app')] class extends Component
                     <div>
                         <x-input-label for="product" :value="__('Product')" />
                         <x-select wire:model="product" id="product" name="product" required class="mt-1 block w-full">
-                            @foreach (Deployment::PRODUCTS as $productOption)
-                                <option value="{{ $productOption }}">{{ $productOption }}</option>
+                            @foreach ($this->products as $productOption)
+                                <option value="{{ $productOption->slug }}">{{ $productOption->name }}{{ $productOption->active ? '' : ' (inactive)' }}</option>
                             @endforeach
                         </x-select>
                         <x-input-error :messages="$errors->get('product')" class="mt-2" />

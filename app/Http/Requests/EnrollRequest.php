@@ -27,6 +27,7 @@ class EnrollRequest extends FormRequest
         return [
             'code' => ['required', 'string', 'max:64'],
             'deployment_uuid' => ['nullable', 'uuid', 'exists:deployments,uuid'],
+            'product' => ['nullable', 'string', 'exists:products,slug'],
             'app_version' => ['nullable', 'string', 'max:64'],
         ];
     }
