@@ -30,6 +30,28 @@ class Feature extends Model
     }
 
     /**
+     * FlowEdu quote-module keys mapped to canonical db_column keys.
+     * Transcribed verbatim from the live FlowEdu config/licence.php
+     * `modules` block (key → db_column) on 2026-09-20. Do not derive
+     * this by stripping prefixes: the map is the contract with the
+     * sender, and catalogue churn must never 422 a legitimate quote.
+     *
+     * @var array<string, string>
+     */
+    public const FLOWEDU_MODULE_MAP = [
+        'finance' => 'module_finance',
+        'staff_hr' => 'module_staff_hr',
+        'reports' => 'module_reports',
+        'evaluations' => 'module_evaluations',
+        'student_welfare' => 'module_student_welfare',
+        'progression' => 'module_progression',
+        'system_admin' => 'module_system_admin',
+        'teacher_tools' => 'module_teacher_tools',
+        'messaging' => 'module_messaging',
+        'practicum' => 'module_practicum',
+    ];
+
+    /**
      * Features currently offered (the only ones new grants may enable).
      */
     #[Scope]

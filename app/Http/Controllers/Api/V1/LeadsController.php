@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreLeadRequest;
+use App\Models\Feature;
 use App\Models\Lead;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
@@ -34,10 +35,14 @@ class LeadsController extends Controller
             'product_id' => $product->id,
             'contact_name' => $validated['contact']['name'],
             'contact_email' => $validated['contact']['email'],
+            'contact_role' => $validated['contact']['role'] ?? null,
             'contact_phone' => $validated['contact']['phone'] ?? null,
-            'school' => $validated['contact']['school'] ?? null,
+            'school' => $validated['contact']['school'] ?? $validated['contact']['college'] ?? null,
             'band' => $validated['band'],
-            'modules' => array_values($validated['modules']),
+            'modules' => array_values(array_map(
+                fn (string $module): string => Feature::FLOWEDU_MODULE_MAP[$module],
+                $validated['modules']
+            )),
             'quote_upfront' => $validated['quote']['upfront'],
             'quote_renewal' => $validated['quote']['renewal'],
             'quote_lines' => array_values($validated['quote']['lines']),

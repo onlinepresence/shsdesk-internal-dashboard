@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['product_id', 'contact_name', 'contact_email', 'contact_phone', 'school', 'band', 'modules', 'quote_upfront', 'quote_renewal', 'quote_lines', 'status'])]
+#[Fillable(['product_id', 'contact_name', 'contact_email', 'contact_role', 'contact_phone', 'school', 'band', 'modules', 'quote_upfront', 'quote_renewal', 'quote_lines', 'status'])]
 class Lead extends Model
 {
     /** @use HasFactory<LeadFactory> */

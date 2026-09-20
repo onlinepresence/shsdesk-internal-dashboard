@@ -17,6 +17,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?int $deletingId = null;
 
+    public ?int $viewingId = null;
+
     public function updatedStatus(): void
     {
         $this->resetPage();
@@ -41,6 +43,25 @@ new #[Layout('layouts.app')] class extends Component
             Lead::STATUS_CONVERTED => 'success',
             default => 'muted',
         };
+    }
+
+    /**
+     * Lead staged in the detail modal, if any.
+     */
+    #[Computed]
+    public function viewing(): ?Lead
+    {
+        if ($this->viewingId === null) {
+            return null;
+        }
+
+        return Lead::with('product')->find($this->viewingId);
+    }
+
+    public function closeDetail(): void
+    {
+        $this->reset(['viewingId']);
+        $this->dispatch('close-lead-detail');
     }
 
     /**
@@ -72,6 +93,8 @@ new #[Layout('layouts.app')] class extends Component
     {
         $lead = Lead::findOrFail($id);
 
+        $contact = $lead->contact_name.(($lead->contact_role ?? '') !== '' ? " ({$lead->contact_role})" : '');
+
         session([
             'lead_prefill' => [
                 'lead_id' => $lead->id,
@@ -79,6 +102,7 @@ new #[Layout('layouts.app')] class extends Component
                 'product' => $lead->product->slug,
                 'modules' => $lead->modules ?? [],
                 'band' => $lead->band,
+                'notes' => "Lead: {$contact} — {$lead->contact_email}".(($lead->contact_phone ?? '') !== '' ? ", {$lead->contact_phone}" : ''),
             ],
         ]);
 
@@ -113,7 +137,7 @@ new #[Layout('layouts.app')] class extends Component
     }
 }; ?>
 
-<div class="py-12" x-data="{}" x-on:open-lead-delete.window="$dispatch('open-modal', 'lead-delete')" x-on:close-lead-delete.window="$dispatch('close-modal', 'lead-delete')">
+<div class="py-12" x-data="{}" x-on:open-lead-delete.window="$dispatch('open-modal', 'lead-delete')" x-on:close-lead-delete.window="$dispatch('close-modal', 'lead-delete')" x-on:open-lead-detail.window="$dispatch('open-modal', 'lead-detail')" x-on:close-lead-detail.window="$dispatch('close-modal', 'lead-detail')">
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6">
             <x-section-title title="Leads" subtitle="Quote requests awaiting human review. Spam stays here — it never becomes access." />
@@ -160,6 +184,9 @@ new #[Layout('layouts.app')] class extends Component
                                     </x-table.cell>
                                     <x-table.cell>
                                         <span class="flex items-center gap-2">
+                                            <button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'lead-detail'); $wire.set('viewingId', {{ $lead->id }})" class="text-sm font-medium text-brand underline hover:text-deep dark:text-slate-200 dark:hover:text-white">
+                                                {{ __('View') }}
+                                            </button>
                                             @if ($lead->status !== Lead::STATUS_CONVERTED)
                                                 <x-tertiary-button type="button" wire:click="convert({{ $lead->id }})">
                                                     {{ __('Convert') }}
@@ -208,6 +235,62 @@ new #[Layout('layouts.app')] class extends Component
                         </x-danger-button>
                     </div>
                 </form>
+            </x-modal>
+
+            <x-modal name="lead-detail" focusable>
+                <div class="p-6">
+                    <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                        {{ __('Lead detail') }}
+                    </h2>
+                    @if ($this->viewing !== null)
+                        <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Contact</dt>
+                                <dd class="mt-1 text-sm text-slate-900 dark:text-white">{{ $this->viewing->contact_name }}</dd>
+                                @if (($this->viewing->contact_role ?? '') !== '')
+                                    <dd class="text-sm text-slate-500 dark:text-slate-400">{{ $this->viewing->contact_role }}</dd>
+                                @endif
+                                <dd class="mt-1 text-sm text-slate-600 dark:text-slate-300">{{ $this->viewing->contact_email }}</dd>
+                                @if (($this->viewing->contact_phone ?? '') !== '')
+                                    <dd class="text-sm text-slate-600 dark:text-slate-300">{{ $this->viewing->contact_phone }}</dd>
+                                @endif
+                            </div>
+                            <div>
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">School</dt>
+                                <dd class="mt-1 text-sm text-slate-900 dark:text-white">{{ $this->viewing->school ?? '—' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Product</dt>
+                                <dd class="mt-1 text-sm text-slate-900 dark:text-white">{{ $this->viewing->product?->slug ?? '—' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Band</dt>
+                                <dd class="mt-1 text-sm text-slate-900 dark:text-white">{{ $this->viewing->band }}</dd>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Modules</dt>
+                                <dd class="mt-1 font-mono text-sm text-slate-900 dark:text-white">{{ implode(', ', (array) ($this->viewing->modules ?? [])) ?: '—' }}</dd>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Quote</dt>
+                                <dd class="mt-1 text-sm text-slate-900 dark:text-white">
+                                    Upfront {{ number_format((float) $this->viewing->quote_upfront, 2) }} ·
+                                    Renewal {{ number_format((float) $this->viewing->quote_renewal, 2) }}
+                                </dd>
+                                <ul class="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                                    @foreach ((array) ($this->viewing->quote_lines ?? []) as $line)
+                                        <li>{{ $line['label'] ?? '—' }} — {{ number_format((float) ($line['amount'] ?? 0), 2) }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        </dl>
+                    @endif
+                    <div class="mt-6 flex justify-end">
+                        <x-secondary-button type="button" wire:click="closeDetail">
+                            {{ __('Close') }}
+                        </x-secondary-button>
+                    </div>
+                </div>
             </x-modal>
         </div>
     </div>

@@ -72,6 +72,7 @@ new #[Layout('layouts.app')] class extends Component
                 'licence_prefill_'.$deployment->id => [
                     'modules' => $prefill['modules'] ?? [],
                     'band' => $prefill['band'] ?? null,
+                    'notes' => $prefill['notes'] ?? null,
                 ],
             ]);
             session()->forget('lead_prefill');

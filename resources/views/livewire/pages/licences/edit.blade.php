@@ -74,6 +74,10 @@ new #[Layout('layouts.app')] class extends Component
                     $this->student_band = $prefill['band'];
                     $this->updatedStudentBand();
                 }
+
+                $this->notes = is_string($prefill['notes'] ?? null) && trim($prefill['notes']) !== ''
+                    ? trim($prefill['notes'])
+                    : null;
             }
 
             return;

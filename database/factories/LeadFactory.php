@@ -22,6 +22,7 @@ class LeadFactory extends Factory
             'product_id' => Product::factory(),
             'contact_name' => $this->faker->name(),
             'contact_email' => $this->faker->unique()->safeEmail(),
+            'contact_role' => $this->faker->jobTitle(),
             'contact_phone' => $this->faker->phoneNumber(),
             'school' => $this->faker->company().' School',
             'band' => '1-500',
