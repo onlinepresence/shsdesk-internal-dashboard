@@ -3,7 +3,6 @@
 use App\Models\DemoKey;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -14,11 +13,6 @@ new #[Layout('layouts.app')] class extends Component
     use WithPagination;
 
     public string $label = '';
-
-    public bool $fullAccess = true;
-
-    /** @var list<string> Catalogue feature keys, honoured unless full access is granted. */
-    public array $scope = [];
 
     public ?string $expires_at = null;
 
@@ -40,21 +34,10 @@ new #[Layout('layouts.app')] class extends Component
         return DemoKey::query()->latest()->paginate(10);
     }
 
-    /**
-     * Catalogue features offered as scopes, keyed by key.
-     *
-     * @return array<string, string>
-     */
-    #[Computed]
-    public function scopes(): array
-    {
-        return DemoKey::featureOptions();
-    }
-
     public function openMintModal(): void
     {
-        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed', 'plainTextCode', 'mintedId', 'scope']);
-        $this->fullAccess = true;
+        $this->reset(['label', 'host', 'neverConfirmed', 'plainTextCode', 'mintedId']);
+        $this->expires_at = now()->addMinutes(DemoKey::DEFAULT_EXPIRY_MINUTES)->format('Y-m-d\TH:i');
         $this->never = false;
         $this->resetValidation();
         $this->dispatch('open-demo-form');
@@ -62,16 +45,17 @@ new #[Layout('layouts.app')] class extends Component
 
     public function cancelMint(): void
     {
-        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed', 'plainTextCode', 'mintedId', 'scope']);
-        $this->fullAccess = true;
+        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed', 'plainTextCode', 'mintedId']);
         $this->never = false;
         $this->resetValidation();
         $this->dispatch('close-demo-form');
     }
 
     /**
-     * Mint a key. A never-expiring key stops at an explicit confirm
-     * first — it outlives every rotation around it.
+     * Mint a key. Blank expiry falls back to the 30-minute default;
+     * a never-expiring key stops at an explicit confirm first — it
+     * outlives every rotation around it. Features always come from
+     * licence rows, so the form offers no scope at all.
      */
     public function mint(): void
     {
@@ -85,10 +69,7 @@ new #[Layout('layouts.app')] class extends Component
 
         $validated = $this->validate([
             'label' => ['required', 'string', 'max:255'],
-            'fullAccess' => ['boolean'],
-            'scope' => ['array'],
-            'scope.*' => ['string', Rule::in(array_keys(DemoKey::featureOptions()))],
-            'expires_at' => ['nullable', 'date', 'after:today'],
+            'expires_at' => ['nullable', 'date', 'after:now'],
             'never' => ['boolean'],
             'host' => ['nullable', 'string', 'max:255'],
         ]);
@@ -99,20 +80,9 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
-        if (! $this->fullAccess && empty($validated['scope'])) {
-            $this->addError('scope', __('Pick at least one feature, or grant full access.'));
-
-            return;
-        }
-
-        $finalScope = $this->fullAccess
-            ? [DemoKey::SCOPE_FULL]
-            : array_values(array_unique($validated['scope']));
-
         $minted = DemoKey::mintFor(
             $validated['label'],
-            $finalScope,
-            $this->never ? null : $validated['expires_at'],
+            $this->never ? null : ($validated['expires_at'] ?? now()->addMinutes(DemoKey::DEFAULT_EXPIRY_MINUTES)->toDateTimeString()),
             $validated['host'],
         );
 
@@ -120,14 +90,12 @@ new #[Layout('layouts.app')] class extends Component
             ->performedOn($minted['record'])
             ->causedBy(Auth::user())
             ->withProperties([
-                'scope' => $minted['record']->scope,
                 'expires_at' => $minted['record']->expires_at?->toIso8601String(),
                 'host' => $minted['record']->host,
             ])
             ->log('demo.minted');
 
-        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed', 'scope']);
-        $this->fullAccess = true;
+        $this->reset(['label', 'expires_at', 'host', 'neverConfirmed']);
         $this->never = false;
         $this->plainTextCode = $minted['code'];
         $this->mintedId = $minted['record']->id;
@@ -205,11 +173,10 @@ new #[Layout('layouts.app')] class extends Component
             @endif
 
             <x-card>
-                <x-table loading-except="label, host, expires_at, never, fullAccess, scope, deletingId">
+                <x-table loading-except="label, host, expires_at, never, deletingId">
                     <x-table.head>
                         <x-table.row :hover="false">
                             <x-table.heading>Key</x-table.heading>
-                            <x-table.heading>Scope</x-table.heading>
                             <x-table.heading>Expires</x-table.heading>
                             <x-table.heading>Host</x-table.heading>
                             <x-table.heading>Last used</x-table.heading>
@@ -225,21 +192,7 @@ new #[Layout('layouts.app')] class extends Component
                                         <div class="font-medium text-slate-900 dark:text-white">{{ $key->label }}</div>
                                         <div class="font-mono text-xs text-slate-400 dark:text-slate-500">{{ substr($key->code_hash, 0, 10) }}…</div>
                                     </x-table.cell>
-                                    <x-table.cell>
-                                        @if ($key->scope === [App\Models\DemoKey::SCOPE_FULL])
-                                            <x-badge tone="active">Full access</x-badge>
-                                        @else
-                                            <span class="flex max-w-56 flex-wrap items-center gap-1">
-                                                @foreach (array_slice($key->scope ?? [], 0, 2) as $granted)
-                                                    <x-badge tone="muted">{{ $granted }}</x-badge>
-                                                @endforeach
-                                                @if (count($key->scope ?? []) > 2)
-                                                    <span class="text-xs text-slate-500 dark:text-slate-400">+{{ count($key->scope) - 2 }} more</span>
-                                                @endif
-                                            </span>
-                                        @endif
-                                    </x-table.cell>
-                                    <x-table.cell>{{ $key->expires_at?->format('M d, Y') ?? 'Never' }}</x-table.cell>
+                                    <x-table.cell>{{ $key->expires_at?->format('M d, Y H:i') ?? 'Never' }}</x-table.cell>
                                     <x-table.cell>{{ $key->host ?? '—' }}</x-table.cell>
                                     <x-table.cell>{{ $key->last_used_at?->diffForHumans() ?? '—' }}</x-table.cell>
                                     <x-table.cell>
@@ -286,26 +239,11 @@ new #[Layout('layouts.app')] class extends Component
                             <x-text-input wire:model="label" id="label" class="mt-1 block w-full" type="text" name="label" required maxlength="255" placeholder="Prospect name or site" />
                             <x-input-error :messages="$errors->get('label')" class="mt-2" />
                         </div>
-                        <div x-data="{ fullAccess: $wire.entangle('fullAccess') }" class="flex flex-col gap-4">
-                            <label class="flex cursor-pointer items-center gap-3">
-                                <input type="checkbox" x-model="fullAccess" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
-                                <span class="min-w-0 flex-1">
-                                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ __('Full access') }}</span>
-                                    <span class="block text-sm text-slate-500 dark:text-slate-400">{{ __('Every feature. Untick to pick features below.') }}</span>
-                                </span>
-                            </label>
-                            <div>
-                                <x-input-label for="demo-scope" :value="__('Features')" />
-                                <div :class="fullAccess && 'pointer-events-none opacity-60'" :inert="fullAccess">
-                                    <x-multi-select model="scope" :options="$this->scopes" placeholder="Pick features…" />
-                                </div>
-                                <x-input-error :messages="$errors->get('scope')" class="mt-2" />
-                            </div>
-                        </div>
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>
                                 <x-input-label for="expires_at" :value="__('Expires on')" />
-                                <x-text-input wire:model="expires_at" id="expires_at" class="mt-1 block w-full" type="date" name="expires_at" :disabled="$never" />
+                                <x-text-input wire:model="expires_at" id="expires_at" class="mt-1 block w-full" type="datetime-local" name="expires_at" :disabled="$never" />
+                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Defaults to 30 minutes out. Clear it only for never-expiring keys.</p>
                                 <x-input-error :messages="$errors->get('expires_at')" class="mt-2" />
                             </div>
                             <div>

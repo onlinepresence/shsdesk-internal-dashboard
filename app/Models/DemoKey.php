@@ -7,17 +7,16 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['label', 'scope', 'code_hash', 'expires_at', 'host', 'revoked_at', 'last_used_at'])]
+#[Fillable(['label', 'code_hash', 'expires_at', 'host', 'revoked_at', 'last_used_at'])]
 class DemoKey extends Model
 {
     /** @use HasFactory<DemoKeyFactory> */
     use HasFactory;
 
     /**
-     * Scope unlocking everything. Anything else must be a live
-     * catalogue feature key — see validScopes().
+     * Default lifetime for a minted key when no expiry is picked.
      */
-    public const SCOPE_FULL = 'full';
+    public const DEFAULT_EXPIRY_MINUTES = 30;
 
     /**
      * Human-typable prefix marking a demo key apart from claim codes.
@@ -41,32 +40,10 @@ class DemoKey extends Model
     protected function casts(): array
     {
         return [
-            'scope' => 'array',
             'expires_at' => 'datetime',
             'revoked_at' => 'datetime',
             'last_used_at' => 'datetime',
         ];
-    }
-
-    /**
-     * Scopes a key may carry: full access on its own, or any set of
-     * live catalogue features — never mixed.
-     *
-     * @return list<string>
-     */
-    public static function validScopes(): array
-    {
-        return array_merge([static::SCOPE_FULL], array_keys(static::featureOptions()));
-    }
-
-    /**
-     * Live catalogue features offered as scopes, keyed by key.
-     *
-     * @return array<string, string>
-     */
-    public static function featureOptions(): array
-    {
-        return Feature::query()->where('active', true)->orderBy('key')->pluck('label', 'key')->all();
     }
 
     /**
@@ -117,13 +94,14 @@ class DemoKey extends Model
      * only — the verifier must trust nothing outside the signature.
      * Rebuilt byte-identically any time: issued_at is the row's
      * creation, so re-downloads match the minted bytes exactly.
+     * Features always come from licence rows, never from this
+     * document — there is no scope key by design.
      *
      * @return array{payload: array<string, mixed>, signature: string, algorithm: string}
      */
     public function buildDocument(): array
     {
         return Licence::exportDocument([
-            'scope' => $this->scope,
             'expires_at' => $this->expires_at?->toIso8601String(),
             'host' => $this->host,
             'issued_at' => $this->created_at?->toIso8601String() ?? now()->toIso8601String(),
@@ -134,10 +112,9 @@ class DemoKey extends Model
      * Mint a key and its first signed artifact. Only the hash is
      * stored — the code is shown once and never retained.
      *
-     * @param  list<string>  $scope  ['full'] alone, or catalogue feature keys.
      * @return array{record: DemoKey, code: string, document: array{payload: array<string, mixed>, signature: string, algorithm: string}}
      */
-    public static function mintFor(string $label, array $scope, ?string $expiresAt, ?string $host): array
+    public static function mintFor(string $label, ?string $expiresAt, ?string $host): array
     {
         for ($attempt = 0; $attempt < 10; $attempt++) {
             $code = static::generateCode();
@@ -146,7 +123,6 @@ class DemoKey extends Model
             if (! static::query()->where('code_hash', $hash)->exists()) {
                 $record = static::query()->create([
                     'label' => $label,
-                    'scope' => $scope,
                     'code_hash' => $hash,
                     'expires_at' => $expiresAt,
                     'host' => $host,

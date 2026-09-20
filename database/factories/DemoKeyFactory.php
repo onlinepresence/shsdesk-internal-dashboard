@@ -19,7 +19,6 @@ class DemoKeyFactory extends Factory
     {
         return [
             'label' => ucfirst($this->faker->word()).' demo',
-            'scope' => [DemoKey::SCOPE_FULL],
             'code_hash' => DemoKey::hashCode(DemoKey::generateCode()),
             'expires_at' => now()->addMonth(),
             'host' => null,
