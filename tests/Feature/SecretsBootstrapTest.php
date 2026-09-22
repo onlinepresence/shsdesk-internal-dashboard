@@ -1,7 +1,10 @@
 <?php
 
 use App\Models\DemoKey;
+use App\Models\Deployment;
+use App\Models\EnrollmentCode;
 use App\Models\Licence;
+use App\Models\Product;
 use App\Models\User;
 use App\Support\EnvWriter;
 use Livewire\Volt\Volt;
@@ -192,4 +195,117 @@ test('desk setup repeat runs are stable no-ops', function () {
     $run();
 
     expect(User::query()->count())->toBe(1);
+});
+
+test('convert turns a demo key into a live deployment with a shown-once claim code', function () {
+    $this->actingAs(User::factory()->create());
+
+    $product = Product::factory()->create(['slug' => 'flowedu']);
+    $key = DemoKey::factory()->create();
+
+    $token = Volt::test('pages.demo-keys.index')
+        ->call('openConvertModal', $key->id)
+        ->set('convert_school_name', 'Riverside College')
+        ->set('convert_product', $product->slug)
+        ->call('convert')
+        ->assertHasNoErrors()
+        ->assertSee('View deployment')
+        ->get('convert_plainTextToken');
+
+    expect($token)->toBeString()->not->toBeEmpty();
+
+    $deployment = Deployment::where('school_name', 'Riverside College')->firstOrFail();
+
+    expect($deployment->product)->toBe($product->slug);
+
+    $code = EnrollmentCode::where('deployment_id', $deployment->id)->firstOrFail();
+
+    expect(EnrollmentCode::hashCode($token))->toBe($code->code_hash);
+    expect($key->fresh()->converted_deployment_id)->toBe($deployment->id);
+    expect($key->fresh()->revoked_at)->not->toBeNull();
+
+    $this->assertDatabaseHas('activity_log', ['description' => 'demo.converted']);
+});
+
+test('convert works on expired keys', function () {
+    $this->actingAs(User::factory()->create());
+
+    $product = Product::factory()->create(['slug' => 'flowedu']);
+    $key = DemoKey::factory()->create(['expires_at' => now()->subDay()]);
+
+    Volt::test('pages.demo-keys.index')
+        ->call('openConvertModal', $key->id)
+        ->set('convert_school_name', 'Old Prospect College')
+        ->set('convert_product', $product->slug)
+        ->call('convert')
+        ->assertHasNoErrors();
+
+    $deployment = Deployment::where('school_name', 'Old Prospect College')->firstOrFail();
+
+    expect($key->fresh()->converted_deployment_id)->toBe($deployment->id);
+});
+
+test('converted keys refuse a second conversion', function () {
+    $this->actingAs(User::factory()->create());
+
+    $product = Product::factory()->create(['slug' => 'flowedu']);
+    $key = DemoKey::factory()->create();
+
+    Volt::test('pages.demo-keys.index')
+        ->call('openConvertModal', $key->id)
+        ->set('convert_school_name', 'Riverside College')
+        ->set('convert_product', $product->slug)
+        ->call('convert')
+        ->assertHasNoErrors();
+
+    Volt::test('pages.demo-keys.index')
+        ->call('openConvertModal', $key->id)
+        ->assertHasErrors(['convert']);
+
+    expect(Deployment::query()->count())->toBe(1);
+    expect(EnrollmentCode::query()->count())->toBe(1);
+});
+
+test('a failed conversion creates nothing', function () {
+    $this->actingAs(User::factory()->create());
+
+    $product = Product::factory()->create(['slug' => 'flowedu']);
+    $key = DemoKey::factory()->create();
+
+    Deployment::creating(function () {
+        throw new RuntimeException('boom');
+    });
+
+    try {
+        expect(fn () => Volt::test('pages.demo-keys.index')
+            ->call('openConvertModal', $key->id)
+            ->set('convert_school_name', 'Riverside College')
+            ->set('convert_product', $product->slug)
+            ->call('convert'))->toThrow('boom');
+    } finally {
+        Deployment::clearBootedModels();
+    }
+
+    expect(Deployment::query()->count())->toBe(0);
+    expect(EnrollmentCode::query()->count())->toBe(0);
+    expect($key->fresh()->converted_deployment_id)->toBeNull();
+    expect($key->fresh()->revoked_at)->toBeNull();
+});
+
+test('revoked but unconverted keys still convert', function () {
+    $this->actingAs(User::factory()->create());
+
+    $product = Product::factory()->create(['slug' => 'flowedu']);
+    $key = DemoKey::factory()->revoked()->create();
+
+    Volt::test('pages.demo-keys.index')
+        ->call('openConvertModal', $key->id)
+        ->set('convert_school_name', 'Riverside College')
+        ->set('convert_product', $product->slug)
+        ->call('convert')
+        ->assertHasNoErrors();
+
+    $deployment = Deployment::where('school_name', 'Riverside College')->firstOrFail();
+
+    expect($key->fresh()->converted_deployment_id)->toBe($deployment->id);
 });

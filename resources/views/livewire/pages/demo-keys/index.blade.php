@@ -1,10 +1,15 @@
 <?php
 
 use App\Models\DemoKey;
+use App\Models\Deployment;
+use App\Models\EnrollmentCode;
 use App\Models\Licence;
+use App\Models\Product;
 use App\Support\EnvWriter;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -32,10 +37,32 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?string $verificationKey = null;
 
+    public ?int $convertingId = null;
+
+    public string $convert_school_name = '';
+
+    public string $convert_product = '';
+
+    public ?string $convert_plainTextToken = null;
+
+    public ?string $convert_deploymentUuid = null;
+
     #[Computed]
     public function demoKeys(): LengthAwarePaginator
     {
-        return DemoKey::query()->latest()->paginate(10);
+        return DemoKey::query()->with('convertedDeployment')->latest()->paginate(10);
+    }
+
+    /**
+     * Products a converted deployment may register under, live from
+     * the table.
+     *
+     * @return Collection<int, Product>
+     */
+    #[Computed]
+    public function products(): Collection
+    {
+        return Product::orderBy('name')->get();
     }
 
     /**
@@ -179,6 +206,82 @@ new #[Layout('layouts.app')] class extends Component
         $this->dispatch('close-demo-delete');
     }
 
+    public function openConvertModal(int $id): void
+    {
+        $key = DemoKey::findOrFail($id);
+
+        if ($key->isConverted()) {
+            $this->addError('convert', __('This key already became a live deployment.'));
+
+            return;
+        }
+
+        $this->reset(['convert_school_name', 'convert_product', 'convert_plainTextToken', 'convert_deploymentUuid']);
+        $this->convertingId = $key->id;
+        $this->convert_school_name = $key->label;
+        $this->convert_product = $this->products->firstWhere('slug', 'flowedu')?->slug ?? $this->products->first()?->slug ?? '';
+        $this->resetValidation();
+        $this->dispatch('open-demo-convert');
+    }
+
+    public function cancelConvert(): void
+    {
+        $this->reset(['convertingId', 'convert_school_name', 'convert_product', 'convert_plainTextToken', 'convert_deploymentUuid']);
+        $this->resetValidation();
+        $this->dispatch('close-demo-convert');
+    }
+
+    /**
+     * Turn a demo key into a live deployment: register the school,
+     * mint its first claim code, and retire the demo key — all in
+     * one transaction so partial conversions never persist. Works
+     * on active and expired keys alike, and on revoked keys that
+     * were never converted.
+     */
+    public function convert(): void
+    {
+        $key = DemoKey::findOrFail($this->convertingId);
+
+        if ($key->isConverted()) {
+            $this->addError('convert', __('This key already became a live deployment.'));
+
+            return;
+        }
+
+        $validated = $this->validate([
+            'convert_school_name' => ['required', 'string', 'max:255'],
+            'convert_product' => ['required', 'string', 'exists:products,slug'],
+        ]);
+
+        $converted = DB::transaction(function () use ($key, $validated): array {
+            $deployment = Deployment::create([
+                'school_name' => $validated['convert_school_name'],
+                'product' => $validated['convert_product'],
+            ]);
+
+            $minted = EnrollmentCode::mintFor($deployment);
+
+            $key->markRevoked();
+            $key->markConverted($deployment);
+
+            activity('demo')
+                ->performedOn($key)
+                ->causedBy(Auth::user())
+                ->withProperties([
+                    'deployment_id' => $deployment->id,
+                    'deployment_uuid' => $deployment->uuid,
+                ])
+                ->log('demo.converted');
+
+            return ['deployment' => $deployment, 'code' => $minted['code']];
+        });
+
+        $this->convert_plainTextToken = $converted['code'];
+        $this->convert_deploymentUuid = $converted['deployment']->uuid;
+        $this->reset(['convertingId']);
+        $this->dispatch('close-demo-convert');
+    }
+
     /**
      * Retire a key. Offline copies keep verifying until they lapse —
      * revocation bites on the next online check.
@@ -201,7 +304,7 @@ new #[Layout('layouts.app')] class extends Component
     }
 }; ?>
 
-<div class="py-12" x-data="{}" x-on:open-demo-form.window="$dispatch('open-modal', 'demo-form')" x-on:close-demo-form.window="$dispatch('close-modal', 'demo-form')" x-on:open-demo-never-confirm.window="$dispatch('open-modal', 'demo-never-confirm')" x-on:close-demo-never-confirm.window="$dispatch('close-modal', 'demo-never-confirm')" x-on:open-demo-delete.window="$dispatch('open-modal', 'demo-delete')" x-on:close-demo-delete.window="$dispatch('close-modal', 'demo-delete')">
+<div class="py-12" x-data="{}" x-on:open-demo-form.window="$dispatch('open-modal', 'demo-form')" x-on:close-demo-form.window="$dispatch('close-modal', 'demo-form')" x-on:open-demo-never-confirm.window="$dispatch('open-modal', 'demo-never-confirm')" x-on:close-demo-never-confirm.window="$dispatch('close-modal', 'demo-never-confirm')" x-on:open-demo-delete.window="$dispatch('open-modal', 'demo-delete')" x-on:close-demo-delete.window="$dispatch('close-modal', 'demo-delete')" x-on:open-demo-convert.window="$dispatch('open-modal', 'demo-convert')" x-on:close-demo-convert.window="$dispatch('close-modal', 'demo-convert')">
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6">
             <x-section-title title="Demo keys" subtitle="Signed demo credentials. Validity and host binding live inside the signature — verifiers trust nothing else.">
@@ -253,8 +356,22 @@ new #[Layout('layouts.app')] class extends Component
                 </x-alert>
             @endif
 
+            @if ($convert_plainTextToken !== null)
+                <x-alert tone="warn" title="Deployment live — enrollment code (copy once)" :dismissible="false">
+                    <div x-data="{ copied: false }" class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <code x-ref="converttoken" class="min-w-0 flex-1 break-all font-mono text-sm">{{ $convert_plainTextToken }}</code>
+                        <x-secondary-button type="button" @click="navigator.clipboard.writeText($refs.converttoken.innerText.trim()); copied = true" x-text="copied ? 'Copied' : 'Copy'" />
+                        @if ($convert_deploymentUuid !== null)
+                            <x-button-link :href="route('deployments.show', $convert_deploymentUuid)" wire:navigate variant="tertiary">
+                                {{ __('View deployment') }}
+                            </x-button-link>
+                        @endif
+                    </div>
+                </x-alert>
+            @endif
+
             <x-card>
-                <x-table loading-except="label, host, expires_at, never, deletingId">
+                <x-table loading-except="label, host, expires_at, never, deletingId, convert_school_name, convert_product, convertingId">
                     <x-table.head>
                         <x-table.row :hover="false">
                             <x-table.heading>Key</x-table.heading>
@@ -277,10 +394,23 @@ new #[Layout('layouts.app')] class extends Component
                                     <x-table.cell>{{ $key->host ?? '—' }}</x-table.cell>
                                     <x-table.cell>{{ $key->last_used_at?->diffForHumans() ?? '—' }}</x-table.cell>
                                     <x-table.cell>
-                                        <x-badge :tone="$key->isRevoked() ? 'danger' : ($key->isExpired() ? 'warn' : 'success')">{{ $key->isRevoked() ? 'Revoked' : ($key->isExpired() ? 'Expired' : 'Active') }}</x-badge>
+                                        @if ($key->isConverted())
+                                            <x-badge tone="success">Converted</x-badge>
+                                        @else
+                                            <x-badge :tone="$key->isRevoked() ? 'danger' : ($key->isExpired() ? 'warn' : 'success')">{{ $key->isRevoked() ? 'Revoked' : ($key->isExpired() ? 'Expired' : 'Active') }}</x-badge>
+                                        @endif
                                     </x-table.cell>
                                     <x-table.cell>
                                         <span class="flex items-center gap-2">
+                                            @if ($key->isConverted() && $key->convertedDeployment !== null)
+                                                <x-button-link :href="route('deployments.show', $key->convertedDeployment)" wire:navigate variant="tertiary">
+                                                    {{ __('View deployment') }}
+                                                </x-button-link>
+                                            @else
+                                                <x-tertiary-button type="button" wire:click="openConvertModal({{ $key->id }})">
+                                                    {{ __('Convert to live') }}
+                                                </x-tertiary-button>
+                                            @endif
                                             @if (! $this->signingKeyMissing)
                                                 <x-button-link :href="route('demo-keys.download', $key)" variant="tertiary">
                                                     {{ __('Download') }}
@@ -398,6 +528,43 @@ new #[Layout('layouts.app')] class extends Component
                             <span wire:loading.remove wire:target="delete">{{ __('Revoke key') }}</span>
                             <span wire:loading wire:target="delete">{{ __('Revoking…') }}</span>
                         </x-danger-button>
+                    </div>
+                </form>
+            </x-modal>
+
+            <x-modal name="demo-convert" focusable>
+                <form wire:submit="convert" class="p-6">
+                    <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                        {{ __('Convert to live deployment?') }}
+                    </h2>
+                    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                        {{ __('Registers the school, mints its first enrollment code, and retires this demo key — all at once.') }}
+                    </p>
+                    <div class="mt-6 flex flex-col gap-4">
+                        <div>
+                            <x-input-label for="convert_school_name" :value="__('School name')" />
+                            <x-text-input wire:model="convert_school_name" id="convert_school_name" class="mt-1 block w-full" type="text" name="convert_school_name" required maxlength="255" />
+                            <x-input-error :messages="$errors->get('convert_school_name')" class="mt-2" />
+                        </div>
+                        <div>
+                            <x-input-label for="convert_product" :value="__('Product')" />
+                            <x-select wire:model="convert_product" id="convert_product" name="convert_product" required class="mt-1 block w-full">
+                                @foreach ($this->products as $productOption)
+                                    <option value="{{ $productOption->slug }}">{{ $productOption->name }}{{ $productOption->active ? '' : ' (inactive)' }}</option>
+                                @endforeach
+                            </x-select>
+                            <x-input-error :messages="$errors->get('convert_product')" class="mt-2" />
+                        </div>
+                    </div>
+                    <x-input-error :messages="$errors->get('convert')" class="mt-2" />
+                    <div class="mt-6 flex justify-end gap-2">
+                        <x-tertiary-button type="button" wire:click="cancelConvert" x-on:click="$dispatch('close')">
+                            {{ __('Cancel') }}
+                        </x-tertiary-button>
+                        <x-primary-button wire:loading.attr="disabled" wire:target="convert">
+                            <span wire:loading.remove wire:target="convert">{{ __('Convert to live') }}</span>
+                            <span wire:loading wire:target="convert">{{ __('Converting…') }}</span>
+                        </x-primary-button>
                     </div>
                 </form>
             </x-modal>

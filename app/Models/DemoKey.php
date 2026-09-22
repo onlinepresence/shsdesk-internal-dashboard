@@ -6,8 +6,9 @@ use Database\Factories\DemoKeyFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['label', 'code_hash', 'expires_at', 'host', 'revoked_at', 'last_used_at'])]
+#[Fillable(['label', 'code_hash', 'expires_at', 'host', 'revoked_at', 'last_used_at', 'converted_deployment_id'])]
 class DemoKey extends Model
 {
     /** @use HasFactory<DemoKeyFactory> */
@@ -68,6 +69,31 @@ class DemoKey extends Model
     public function isRevoked(): bool
     {
         return $this->revoked_at !== null;
+    }
+
+    /**
+     * Deployment this key was converted into, if ever.
+     */
+    public function convertedDeployment(): BelongsTo
+    {
+        return $this->belongsTo(Deployment::class, 'converted_deployment_id');
+    }
+
+    /**
+     * Whether the key already became a live deployment. Converted
+     * keys never convert again.
+     */
+    public function isConverted(): bool
+    {
+        return $this->converted_deployment_id !== null;
+    }
+
+    /**
+     * Point the key at its live deployment.
+     */
+    public function markConverted(Deployment $deployment): void
+    {
+        $this->update(['converted_deployment_id' => $deployment->id]);
     }
 
     /**
