@@ -13,7 +13,9 @@ new class extends Component
     public string $password_confirmation = '';
 
     /**
-     * Update the password for the currently authenticated user.
+     * Update the password for the currently authenticated user. A
+     * self-initiated change is the ONLY path that clears the forced
+     * rotation flag — admin resets set it, never clear it.
      */
     public function updatePassword(): void
     {
@@ -30,6 +32,7 @@ new class extends Component
 
         Auth::user()->update([
             'password' => Hash::make($validated['password']),
+            'must_change_password' => false,
         ]);
 
         $this->reset('current_password', 'password', 'password_confirmation');

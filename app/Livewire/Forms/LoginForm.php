@@ -22,7 +22,9 @@ class LoginForm extends Form
     public bool $remember = false;
 
     /**
-     * Attempt to authenticate the request's credentials.
+     * Attempt to authenticate the request's credentials. Deactivated
+     * accounts fail closed with the generic message — indistinguishable
+     * from wrong credentials by design.
      *
      * @throws ValidationException
      */
@@ -30,7 +32,7 @@ class LoginForm extends Form
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only(['email', 'password']), $this->remember)) {
+        if (! Auth::attempt(['email' => $this->email, 'password' => $this->password, 'is_active' => true], $this->remember)) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([

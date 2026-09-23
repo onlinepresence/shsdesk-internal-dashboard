@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\RequirePasswordChange;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -15,7 +16,11 @@ $app = Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->alias([
+            'password.changed' => RequirePasswordChange::class,
+        ]);
+
+        $middleware->appendToGroup('web', 'password.changed');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

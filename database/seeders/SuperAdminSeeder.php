@@ -4,38 +4,39 @@ namespace Database\Seeders;
 
 use App\Models\User;
 use Illuminate\Database\Seeder;
-use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\Hash;
 
 class SuperAdminSeeder extends Seeder
 {
+    public const EMAIL = 'admin@controldesk.com';
+
+    public const PASSWORD = 'Admin@123';
+
     /**
-     * Grant the super-admin role. Explicitly env-gated and never called
-     * from DatabaseSeeder — run by hand for a chosen local user:
-     *
-     *   SUPERADMIN_EMAIL=you@example.com php artisan db:seed --class=SuperAdminSeeder
+     * Create the first owner account. Creates the row ONLY when the
+     * email is absent — an existing row (even with a different
+     * password) is never touched, so re-running cannot clobber it.
      */
     public function run(): void
     {
-        $email = trim((string) env('SUPERADMIN_EMAIL', 'matrix@me.com'));
+        $this->call(AccessControlSeeder::class);
 
-        if ($email === '') {
-            $this->command->warn('Set SUPERADMIN_EMAIL to grant the super-admin role.');
-
-            return;
-        }
-
-        $user = User::where('email', $email)->first();
-
-        if ($user === null) {
-            $this->command->warn("No user found with email {$email}.");
+        if (User::where('email', self::EMAIL)->exists()) {
+            $this->command->info('Owner account already present; nothing changed.');
 
             return;
         }
 
-        Role::firstOrCreate(['name' => 'super-admin', 'guard_name' => 'web']);
+        $user = User::query()->create([
+            'name' => 'ControlDesk Admin',
+            'email' => self::EMAIL,
+            'email_verified_at' => now(),
+            'password' => Hash::make(self::PASSWORD),
+            'must_change_password' => true,
+        ]);
 
-        $user->assignRole('super-admin');
+        $user->assignRole(AccessControlSeeder::SUPER_ADMIN_ROLE);
 
-        $this->command->info("Granted super-admin to {$email}.");
+        $this->command->info('Owner account created ('.self::EMAIL.').');
     }
 }

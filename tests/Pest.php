@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -18,6 +19,12 @@ use Tests\TestCase;
 
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
+    ->beforeEach(function (): void {
+        // Ability gates resolve through seeded Spatie permissions;
+        // without these rows every gate check would throw instead of
+        // denying, so every feature test starts from a seeded model.
+        $this->seed(AccessControlSeeder::class);
+    })
     ->in('Feature');
 
 /*

@@ -117,6 +117,11 @@ Route::middleware(['auth', 'verified', 'can:manage-catalogue'])->group(function 
         ->name('catalogue.index');
 });
 
+Route::middleware(['auth', 'verified', 'can:manage-users'])->group(function () {
+    Volt::route('users', 'pages.users.index')
+        ->name('users.index');
+});
+
 Route::get('ui', function () {
     abort_unless(app()->isLocal(), 404);
 

@@ -3,7 +3,6 @@
 namespace Tests\Feature\Auth;
 
 use Livewire\Volt\Volt;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 test('registration screen is disabled', function () {
     $response = $this->get('/register');
@@ -12,7 +11,7 @@ test('registration screen is disabled', function () {
 });
 
 test('registration component denies direct calls', function () {
-    expect(fn () => Volt::test('pages.auth.register'))->toThrow(NotFoundHttpException::class);
+    Volt::test('pages.auth.register')->assertNotFound();
 
     $this->assertGuest();
 });

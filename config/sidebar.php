@@ -34,6 +34,7 @@ return [
                 ['label' => 'Licences', 'route' => 'licences.index', 'icon' => 'key', 'can' => 'ops.access'],
                 ['label' => 'Invoices', 'route' => 'invoices.index', 'icon' => 'receipt', 'can' => 'ops.access'],
                 ['label' => 'Catalogue', 'route' => 'catalogue.index', 'icon' => 'sliders', 'can' => 'manage-catalogue'],
+                ['label' => 'Users', 'route' => 'users.index', 'icon' => 'users', 'can' => 'manage-users'],
             ],
         ],
         [

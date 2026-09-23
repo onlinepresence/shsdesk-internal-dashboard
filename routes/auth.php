@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
 Route::middleware('guest')->group(function () {
+    // No public registration: the ops surface is staff-only, so every
+    // account enters via desk:setup, SuperAdminSeeder, or a manage-users
+    // invite. (The stale register component now answers 404.)
     Volt::route('login', 'pages.auth.login')
         ->name('login');
 

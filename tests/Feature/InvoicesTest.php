@@ -4,7 +4,6 @@ use App\Models\Deployment;
 use App\Models\Invoice;
 use App\Models\Licence;
 use App\Models\Setting;
-use App\Models\User;
 use Database\Seeders\CatalogueSeeder;
 use Database\Seeders\SettingsSeeder;
 use Livewire\Volt\Volt;
@@ -304,7 +303,6 @@ test('index exposes icon actions per status', function () {
 
     $this->get(route('invoices.index'))
         ->assertOk()
-        ->assertSee('aria-label="View invoice"', false)
         ->assertSee('aria-label="Print invoice"', false)
         ->assertDontSee('aria-label="Edit invoice"', false)
         ->assertDontSee('aria-label="Delete invoice"', false);

@@ -23,6 +23,8 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $this->call([
+            AccessControlSeeder::class,
+            SuperAdminSeeder::class,
             CatalogueSeeder::class,
             SettingsSeeder::class,
             ProductSeeder::class,

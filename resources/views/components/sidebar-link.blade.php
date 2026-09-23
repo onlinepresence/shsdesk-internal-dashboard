@@ -12,6 +12,7 @@ $iconComponents = [
     'ticket' => 'lucide-ticket',
     'receipt' => 'lucide-receipt',
     'sliders' => 'lucide-sliders-horizontal',
+    'users' => 'lucide-users',
 ];
 
 $iconComponent = $iconComponents[$icon] ?? 'lucide-circle';
