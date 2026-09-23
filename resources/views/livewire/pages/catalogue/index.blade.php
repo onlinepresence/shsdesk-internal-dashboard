@@ -76,6 +76,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(): void
     {
+        $this->authorize('manage-catalogue');
+
         $this->currency = Setting::get(Setting::CURRENCY, 'GHS');
         $this->bundle_rate = Setting::get(Setting::BUNDLE_DISCOUNT_RATE);
         $this->bundle_threshold = Setting::get(Setting::BUNDLE_THRESHOLD);
@@ -123,6 +125,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function edit(int $id): void
     {
+        $this->authorize('manage-catalogue');
+
         $feature = Feature::findOrFail($id);
 
         $this->editingId = $feature->id;
@@ -139,6 +143,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function create(): void
     {
+        $this->authorize('manage-catalogue');
+
         $this->reset(['editingId', 'key', 'label', 'description', 'base_price', 'renewal_base']);
         $this->kind = 'module';
         $this->locked = false;
@@ -159,6 +165,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public function save(): void
     {
+        $this->authorize('manage-catalogue');
+
         foreach (['description'] as $field) {
             if ($this->{$field} === '') {
                 $this->{$field} = null;
@@ -247,6 +255,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function toggleActive(int $id): void
     {
+        $this->authorize('manage-catalogue');
+
         $feature = Feature::findOrFail($id);
 
         $feature->update(['active' => ! $feature->active]);
@@ -267,6 +277,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function saveGlobals(): void
     {
+        $this->authorize('manage-catalogue');
+
         $validated = $this->validate([
             'currency' => ['required', 'string', 'max:10'],
             'bundle_rate' => ['required', 'numeric', 'min:0', 'max:1'],
@@ -319,6 +331,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function saveInvoiceSettings(): void
     {
+        $this->authorize('manage-catalogue');
+
         foreach (['department', 'invoice_location'] as $field) {
             if ($this->{$field} === '') {
                 $this->{$field} = null;

@@ -47,6 +47,11 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?string $convert_deploymentUuid = null;
 
+    public function mount(): void
+    {
+        $this->authorize('ops.access');
+    }
+
     #[Computed]
     public function demoKeys(): LengthAwarePaginator
     {
@@ -106,11 +111,15 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function showVerificationKey(): void
     {
+        $this->authorize('ops.access');
+
         $this->verificationKey = Licence::verificationKeyHex();
     }
 
     public function openMintModal(): void
     {
+        $this->authorize('ops.access');
+
         $this->reset(['label', 'host', 'neverConfirmed', 'plainTextCode', 'mintedId']);
         $this->expires_at = now()->addMinutes(DemoKey::DEFAULT_EXPIRY_MINUTES)->format('Y-m-d\TH:i');
         $this->never = false;
@@ -134,6 +143,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function mint(): void
     {
+        $this->authorize('ops.access');
+
         if ($this->signingKeyMissing) {
             $this->addError('signing_key', __('Set LICENCE_SIGNING_KEY before minting — generate one above or set it server-side.'));
 
@@ -189,6 +200,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function mintConfirmed(): void
     {
+        $this->authorize('ops.access');
+
         $this->neverConfirmed = true;
         $this->mint();
     }
@@ -208,6 +221,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public function openConvertModal(int $id): void
     {
+        $this->authorize('ops.access');
+
         $key = DemoKey::findOrFail($id);
 
         if ($key->isConverted()) {
@@ -240,6 +255,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function convert(): void
     {
+        $this->authorize('ops.access');
+
         $key = DemoKey::findOrFail($this->convertingId);
 
         if ($key->isConverted()) {
@@ -288,6 +305,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function delete(): void
     {
+        $this->authorize('ops.access');
+
         $key = DemoKey::findOrFail($this->deletingId);
 
         $key->markRevoked();

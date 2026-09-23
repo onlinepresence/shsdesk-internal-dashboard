@@ -23,5 +23,6 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::define('manage-catalogue', fn (User $user): bool => $user->hasRole('super-admin'));
+        Gate::define('ops.access', fn (User $user): bool => $user->hasRole('super-admin'));
     }
 }

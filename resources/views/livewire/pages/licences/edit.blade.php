@@ -51,6 +51,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(Deployment $deployment): void
     {
+        $this->authorize('ops.access');
+
         $this->deployment = $deployment;
 
         $current = $deployment->latestLicence;
@@ -121,6 +123,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function save(): void
     {
+        $this->authorize('ops.access');
+
         $this->normalizeBlanks();
         $validated = $this->validate($this->rules());
 
@@ -205,6 +209,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function renew(): void
     {
+        $this->authorize('ops.access');
+
         $current = $this->deployment->latestLicence;
 
         abort_unless($current instanceof Licence, 404);
@@ -298,6 +304,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function updatedStudentBand(): void
     {
+        $this->authorize('ops.access');
+
         if ($this->student_band === null || $this->student_band === '') {
             $this->student_band = null;
             $this->max_students = null;
@@ -331,6 +339,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function updatedMaxStudents(): void
     {
+        $this->authorize('ops.access');
+
         $key = Licence::bandKeyForCap($this->maxStudents());
 
         if ($key !== $this->student_band) {
@@ -510,6 +520,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function openInvoiceModal(): void
     {
+        $this->authorize('ops.access');
+
         $dueDays = max(1, Setting::getInt(Setting::INVOICE_DUE_DAYS, 30));
         $this->due_at = today()->addDays($dueDays)->toDateString();
         $this->next_payment_at = today()->addYear()->toDateString();
@@ -523,6 +535,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function createInvoice(): void
     {
+        $this->authorize('ops.access');
+
         if ($this->pendingInvoice !== null) {
             $this->addError('invoice', __('Settle or delete pending invoice :no before generating a new one.', ['no' => $this->pendingInvoice->invoice_no]));
 

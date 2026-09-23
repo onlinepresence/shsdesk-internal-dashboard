@@ -16,11 +16,21 @@ new #[Layout('layouts.guest')] class extends Component
     public string $password_confirmation = '';
 
     /**
+     * Public registration is disabled. Staff accounts are created
+     * via desk:setup. This component stays only to deny stale links
+     * and direct Livewire calls with a 404.
+     */
+    public function mount(): void
+    {
+        abort(404);
+    }
+
+    /**
      * Handle an incoming registration request.
      */
     public function register(): void
     {
-        $validated = $this->validate([
+        abort(404);        $validated = $this->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
             'password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],

@@ -76,7 +76,7 @@ test('licence scopes separate active, expiring, and expired rows', function () {
 });
 
 test('edit page creates the first licence and logs it', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     Volt::test('pages.licences.edit', ['deployment' => $deployment])
@@ -97,7 +97,7 @@ test('edit page creates the first licence and logs it', function () {
 });
 
 test('saving an existing licence updates in place and logs it', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $licence = Licence::factory()->for($deployment)->create();
 
@@ -113,7 +113,7 @@ test('saving an existing licence updates in place and logs it', function () {
 });
 
 test('renew inserts a new row carrying terms forward one year', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $current = Licence::factory()->for($deployment)->create([
         'modules' => ['module_reports' => true],
@@ -134,7 +134,7 @@ test('renew inserts a new row carrying terms forward one year', function () {
 });
 
 test('expiry before start is rejected', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     Volt::test('pages.licences.edit', ['deployment' => $deployment])
@@ -283,7 +283,7 @@ test('worked example matches the hand-computed FlowEdu quote', function () {
 });
 
 test('licence pages render for authenticated users', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     $this->get(route('licences.index'))->assertOk();
@@ -326,7 +326,7 @@ test('feature keys are immutable through mass assignment', function () {
 });
 
 test('renew writes a price snapshot at grant time', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     Licence::factory()->for($deployment)->create([
         'modules' => ['module_reports' => true],
@@ -558,7 +558,7 @@ test('preview splits upfront and renewal with founding off the core only', funct
 });
 
 test('preview validation rejects unknown hosting modes and negative counts', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     Volt::test('pages.licences.edit', ['deployment' => $deployment])
@@ -571,7 +571,7 @@ test('preview validation rejects unknown hosting modes and negative counts', fun
 });
 
 test('save writes quote columns and snapshot with the full quote', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     Volt::test('pages.licences.edit', ['deployment' => $deployment])
@@ -612,7 +612,7 @@ test('save writes quote columns and snapshot with the full quote', function () {
 });
 
 test('renew carries quote columns forward with a fresh snapshot', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     Licence::factory()->for($deployment)->create([
         'modules' => ['module_reports' => true],
@@ -752,7 +752,7 @@ test('custom quotes still snapshot every dimension', function () {
 });
 
 test('edit page previews the reported band for uncapped licences', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $deployment->heartbeats()->create([
         'app_version' => '1.0.0',
@@ -768,7 +768,7 @@ test('edit page previews the reported band for uncapped licences', function () {
 });
 
 test('edit page shows the custom quote state past the auto-priced bands', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $deployment->heartbeats()->create([
         'app_version' => '1.0.0',
@@ -784,7 +784,7 @@ test('edit page shows the custom quote state past the auto-priced bands', functi
 });
 
 test('licence created, updated, and renewed logs carry old and new values', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     Volt::test('pages.licences.edit', ['deployment' => $deployment])

@@ -19,8 +19,15 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?int $viewingId = null;
 
+    public function mount(): void
+    {
+        $this->authorize('ops.access');
+    }
+
     public function updatedStatus(): void
     {
+        $this->authorize('ops.access');
+
         $this->resetPage();
     }
 
@@ -70,6 +77,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function markReviewed(int $id): void
     {
+        $this->authorize('ops.access');
+
         $lead = Lead::findOrFail($id);
 
         if ($lead->status !== Lead::STATUS_NEW) {
@@ -91,6 +100,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function convert(int $id): void
     {
+        $this->authorize('ops.access');
+
         $lead = Lead::findOrFail($id);
 
         $contact = $lead->contact_name.(($lead->contact_role ?? '') !== '' ? " ({$lead->contact_role})" : '');
@@ -121,6 +132,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function delete(): void
     {
+        $this->authorize('ops.access');
+
         $lead = Lead::findOrFail($this->deletingId);
 
         $lead->delete();

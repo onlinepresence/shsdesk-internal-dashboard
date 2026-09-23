@@ -26,6 +26,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function mount(): void
     {
+        $this->authorize('ops.access');
+
         $prefill = session('lead_prefill');
 
         if (! is_array($prefill)) {
@@ -55,6 +57,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function register(): void
     {
+        $this->authorize('ops.access');
+
         $validated = $this->validate([
             'school_name' => ['required', 'string', 'max:255'],
             'product' => ['required', 'string', 'exists:products,slug'],

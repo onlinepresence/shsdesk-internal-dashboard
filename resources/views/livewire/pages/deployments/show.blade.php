@@ -18,6 +18,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(Deployment $deployment): void
     {
+        $this->authorize('ops.access');
+
         $this->deployment = $deployment;
     }
 
@@ -62,6 +64,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function regenerateToken(): void
     {
+        $this->authorize('ops.access');
+
         $this->deployment->tokens()->delete();
 
         $token = $this->deployment->createToken('heartbeat', [Deployment::HEARTBEAT_ABILITY]);
@@ -81,6 +85,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function revoke(): void
     {
+        $this->authorize('ops.access');
+
         $this->deployment->update(['revoked_at' => now()]);
         $this->deployment->tokens()->delete();
 
@@ -98,6 +104,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function mintCode(): void
     {
+        $this->authorize('ops.access');
+
         if ($this->activeCode !== null) {
             $this->addError('code', __('A usable code is already open. Regenerate or void it first.'));
 
@@ -122,6 +130,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function regenerateCode(): void
     {
+        $this->authorize('ops.access');
+
         $this->deployment->enrollmentCodes()
             ->whereNull('voided_at')
             ->whereNull('consumed_at')
@@ -147,6 +157,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function voidCode(): void
     {
+        $this->authorize('ops.access');
+
         $this->deployment->enrollmentCodes()
             ->whereNull('voided_at')
             ->whereNull('consumed_at')

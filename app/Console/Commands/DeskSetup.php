@@ -148,6 +148,8 @@ class DeskSetup extends Command
         }
 
         if (! $empty) {
+            $this->ensureOwnerRole();
+
             $this->stepDone('Owner account present');
 
             return true;
@@ -178,6 +180,27 @@ class DeskSetup extends Command
         $this->stepDone("Owner account created ({$user->email})");
 
         return true;
+    }
+
+    /**
+     * Ensure at least one super-admin exists on upgrades where users
+     * predate role gating. The oldest user becomes owner.
+     */
+    protected function ensureOwnerRole(): void
+    {
+        $role = Role::firstOrCreate(['name' => 'super-admin', 'guard_name' => 'web']);
+
+        $owners = User::role($role->name)->count();
+
+        if ($owners > 0) {
+            return;
+        }
+
+        $oldest = User::query()->oldest('id')->first();
+
+        if ($oldest !== null) {
+            $oldest->assignRole($role);
+        }
     }
 
     /**

@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /*
@@ -47,4 +49,19 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * Create a verified owner with the super-admin role, which carries
+ * both the ops.access and manage-catalogue abilities.
+ */
+function owner(array $attributes = []): User
+{
+    $user = User::factory()->create($attributes);
+
+    Role::firstOrCreate(['name' => 'super-admin', 'guard_name' => 'web']);
+
+    $user->assignRole('super-admin');
+
+    return $user;
 }

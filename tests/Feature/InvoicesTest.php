@@ -15,7 +15,7 @@ beforeEach(function () {
 });
 
 test('band preset fills the cap and typing a cap reselects its band', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     $component = Volt::test('pages.licences.edit', ['deployment' => $deployment])
@@ -34,7 +34,7 @@ test('band preset fills the cap and typing a cap reselects its band', function (
 });
 
 test('create invoice stores the quote and opens the printable invoice', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     Volt::test('pages.licences.edit', ['deployment' => $deployment])
@@ -61,7 +61,7 @@ test('create invoice stores the quote and opens the printable invoice', function
 });
 
 test('stored invoice locks priced inputs on save', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     Licence::factory()->for($deployment)->create([
         'modules' => ['module_reports' => true],
@@ -90,7 +90,7 @@ test('stored invoice locks priced inputs on save', function () {
 });
 
 test('stored invoice page renders for authenticated users', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $invoice = Invoice::factory()->for($deployment)->create([
         'invoice_no' => 'FE-20250101-0001',
@@ -105,7 +105,7 @@ test('stored invoice page renders for authenticated users', function () {
 });
 
 test('invoice page hides other deployments invoices', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $other = Deployment::factory()->create();
     $invoice = Invoice::factory()->for($other)->create();
@@ -115,7 +115,7 @@ test('invoice page hides other deployments invoices', function () {
 });
 
 test('invoices index lists every bill for authenticated users', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $invoice = Invoice::factory()->for($deployment)->create(['invoice_no' => 'FE-20250101-0001']);
 
@@ -126,7 +126,7 @@ test('invoices index lists every bill for authenticated users', function () {
 });
 
 test('invoices index filters to one deployment bills', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $other = Deployment::factory()->create();
     Invoice::factory()->for($deployment)->create(['invoice_no' => 'FE-20250101-0001']);
@@ -144,7 +144,7 @@ test('invoices index filters to one deployment bills', function () {
 });
 
 test('licence page links to their invoices', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     $this->get(route('licences.edit', $deployment->uuid))
@@ -155,7 +155,7 @@ test('licence page links to their invoices', function () {
 });
 
 test('invoice modal prefills due dates and accepts an override', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     Licence::factory()->for($deployment)->create();
 
@@ -175,7 +175,7 @@ test('invoice modal prefills due dates and accepts an override', function () {
 });
 
 test('pending invoice can be deleted and the deletion is logged', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $invoice = Invoice::factory()->for($deployment)->create(['invoice_no' => 'FE-20250101-0001']);
 
@@ -189,7 +189,7 @@ test('pending invoice can be deleted and the deletion is logged', function () {
 });
 
 test('non-pending invoices cannot be deleted', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $invoice = Invoice::factory()->for($deployment)->create(['status' => Invoice::STATUS_PAID]);
 
@@ -202,7 +202,7 @@ test('non-pending invoices cannot be deleted', function () {
 });
 
 test('a fresh invoice is blocked while a pending one exists', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     Licence::factory()->for($deployment)->create(['caps' => ['max_active_students' => 500]]);
 
@@ -219,7 +219,7 @@ test('a fresh invoice is blocked while a pending one exists', function () {
 });
 
 test('a dirty quote blocks invoicing until saved', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     Licence::factory()->for($deployment)->create(['modules' => ['module_reports' => true]]);
 
@@ -233,7 +233,7 @@ test('a dirty quote blocks invoicing until saved', function () {
 });
 
 test('an unsaved first quote blocks invoicing until saved', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     Volt::test('pages.licences.edit', ['deployment' => $deployment])
@@ -246,7 +246,7 @@ test('an unsaved first quote blocks invoicing until saved', function () {
 });
 
 test('non-priced changes do not block invoicing', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     Licence::factory()->for($deployment)->create();
 
@@ -260,7 +260,7 @@ test('non-priced changes do not block invoicing', function () {
 });
 
 test('pending invoice dates can be edited and the edit is logged', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $invoice = Invoice::factory()->for($deployment)->create([
         'due_at' => today()->addDays(30)->toDateString(),
@@ -281,7 +281,7 @@ test('pending invoice dates can be edited and the edit is logged', function () {
 });
 
 test('non-pending invoice dates cannot be edited', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $invoice = Invoice::factory()->for($deployment)->create([
         'status' => Invoice::STATUS_PAID,
@@ -298,7 +298,7 @@ test('non-pending invoice dates cannot be edited', function () {
 });
 
 test('index exposes icon actions per status', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     Invoice::factory()->for($deployment)->create(['status' => Invoice::STATUS_PAID]);
 
@@ -335,7 +335,7 @@ test('settings seeder provides invoice defaults', function () {
 });
 
 test('stored invoice prints its snapshot title, issuer, and dates', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
     $invoice = Invoice::factory()->for($deployment)->create([
         'invoice_no' => 'FE-20250101-0001',

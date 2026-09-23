@@ -117,7 +117,7 @@ test('resubmission refreshes modules and role instead of duplicating', function 
 });
 
 test('contact role is shown on the lead detail modal', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
 
     $lead = Lead::factory()->create(['contact_role' => 'Bursar']);
 
@@ -128,7 +128,7 @@ test('contact role is shown on the lead detail modal', function () {
 });
 
 test('convert carries quoted modules and contact notes into licence prefill', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
 
     $lead = Lead::factory()->create([
         'modules' => ['module_finance', 'module_reports'],

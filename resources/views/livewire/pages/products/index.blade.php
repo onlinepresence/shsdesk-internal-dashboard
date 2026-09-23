@@ -16,6 +16,11 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $slug = '';
 
+    public function mount(): void
+    {
+        $this->authorize('ops.access');
+    }
+
     #[Computed]
     public function products(): LengthAwarePaginator
     {
@@ -30,6 +35,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function create(): void
     {
+        $this->authorize('ops.access');
+
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['required', 'string', 'max:64', 'alpha_dash:ascii', 'unique:products,slug'],
@@ -65,6 +72,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function toggleActive(int $id): void
     {
+        $this->authorize('ops.access');
+
         $product = Product::findOrFail($id);
 
         $product->update(['active' => ! $product->active]);

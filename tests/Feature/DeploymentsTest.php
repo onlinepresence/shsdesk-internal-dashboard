@@ -31,7 +31,7 @@ function issueHeartbeatToken(Deployment $deployment, array $abilities = [Deploym
 }
 
 test('deployments can be registered and the token is shown', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
 
     $component = Volt::test('pages.deployments.create')
         ->set('school_name', 'Springfield Elementary')
@@ -54,7 +54,7 @@ test('deployments can be registered and the token is shown', function () {
 });
 
 test('issued token value is only available on the registering component', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
 
     Volt::test('pages.deployments.create')->assertSet('plainTextToken', null);
 });
@@ -130,7 +130,7 @@ test('heartbeat updates the deployment, stores a receipt, and answers licence te
 });
 
 test('issued token authenticates a real heartbeat', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
 
     $plainTextToken = Volt::test('pages.deployments.create')
         ->set('school_name', 'Shelbyville High')
@@ -211,7 +211,7 @@ test('enroll rejects inactive products', function () {
 test('export marks file-managed and the first heartbeat clears it', function () {
     config()->set('licence-export.signing_key', str_repeat('a', 64));
 
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
 
     $deployment = Deployment::factory()->create();
     Licence::factory()->for($deployment)->create();
@@ -257,7 +257,7 @@ test('stale scope excludes file-managed deployments', function () {
 });
 
 test('deployment pages render for authenticated users', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(owner());
     $deployment = Deployment::factory()->create();
 
     $this->get(route('deployments.index'))->assertOk();

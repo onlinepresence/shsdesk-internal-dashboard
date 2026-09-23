@@ -18,7 +18,7 @@ Route::view('profile', 'profile')
     ->middleware(['auth'])
     ->name('profile');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified', 'can:ops.access'])->group(function () {
     Volt::route('deployments', 'pages.deployments.index')
         ->name('deployments.index');
 

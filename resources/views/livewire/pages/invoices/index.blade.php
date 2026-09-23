@@ -26,8 +26,15 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?string $next_payment_at = null;
 
+    public function mount(): void
+    {
+        $this->authorize('ops.access');
+    }
+
     public function updatedDeployment(): void
     {
+        $this->authorize('ops.access');
+
         $this->resetPage();
     }
 
@@ -65,6 +72,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function beginEdit(int $id): void
     {
+        $this->authorize('ops.access');
+
         $invoice = Invoice::findOrFail($id);
 
         $this->editingId = $invoice->id;
@@ -86,6 +95,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function updateInvoice(): void
     {
+        $this->authorize('ops.access');
+
         $invoice = Invoice::findOrFail($this->editingId);
 
         if (! $invoice->isPending()) {
@@ -134,6 +145,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function delete(): void
     {
+        $this->authorize('ops.access');
+
         $invoice = Invoice::findOrFail($this->deletingId);
 
         if (! $invoice->isPending()) {

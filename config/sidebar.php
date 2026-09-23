@@ -30,18 +30,18 @@ return [
         [
             'section' => 'Manage',
             'items' => [
-                ['label' => 'Deployments', 'route' => 'deployments.index', 'icon' => 'server'],
-                ['label' => 'Licences', 'route' => 'licences.index', 'icon' => 'key'],
-                ['label' => 'Invoices', 'route' => 'invoices.index', 'icon' => 'receipt'],
+                ['label' => 'Deployments', 'route' => 'deployments.index', 'icon' => 'server', 'can' => 'ops.access'],
+                ['label' => 'Licences', 'route' => 'licences.index', 'icon' => 'key', 'can' => 'ops.access'],
+                ['label' => 'Invoices', 'route' => 'invoices.index', 'icon' => 'receipt', 'can' => 'ops.access'],
                 ['label' => 'Catalogue', 'route' => 'catalogue.index', 'icon' => 'sliders', 'can' => 'manage-catalogue'],
             ],
         ],
         [
             'section' => 'Products',
             'items' => [
-                ['label' => 'Products', 'route' => 'products.index', 'icon' => 'package'],
-                ['label' => 'Leads', 'route' => 'leads.index', 'icon' => 'inbox'],
-                ['label' => 'Demo keys', 'route' => 'demo-keys.index', 'icon' => 'ticket'],
+                ['label' => 'Products', 'route' => 'products.index', 'icon' => 'package', 'can' => 'ops.access'],
+                ['label' => 'Leads', 'route' => 'leads.index', 'icon' => 'inbox', 'can' => 'ops.access'],
+                ['label' => 'Demo keys', 'route' => 'demo-keys.index', 'icon' => 'ticket', 'can' => 'ops.access'],
             ],
         ],
     ],

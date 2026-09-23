@@ -41,23 +41,21 @@ test('demo-keys page shows gated banner without actions when unset', function ()
 
     $this->actingAs(User::factory()->create());
 
-    $this->get(route('demo-keys.index'))
-        ->assertOk()
-        ->assertSee('Signing key missing')
-        ->assertSee('LICENCE_SIGNING_KEY, which is not set')
-        ->assertDontSee('Generate signing key');
+    $this->get(route('demo-keys.index'))->assertForbidden();
 
     $this->actingAs(makeSecretsAdmin());
 
     $this->get(route('demo-keys.index'))
         ->assertOk()
+        ->assertSee('Signing key missing')
+        ->assertSee('LICENCE_SIGNING_KEY, which is not set')
         ->assertSee('Generate signing key');
 });
 
 test('mint is refused when the signing key is unset', function () {
     config()->set('licence-export.signing_key', null);
 
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(makeSecretsAdmin());
 
     Volt::test('pages.demo-keys.index')
         ->set('label', 'Prospect')
@@ -70,7 +68,7 @@ test('mint is refused when the signing key is unset', function () {
 test('demo download refuses with 422 when the signing key is unset', function () {
     config()->set('licence-export.signing_key', null);
 
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(makeSecretsAdmin());
 
     $key = DemoKey::factory()->create();
 
@@ -82,9 +80,8 @@ test('generate action is forbidden without the catalogue permission', function (
 
     $this->actingAs(User::factory()->create());
 
-    Volt::test('pages.demo-keys.index')
-        ->call('generateSigningKey')
-        ->assertForbidden();
+    // Bare users are denied at mount, before any action runs.
+    Volt::test('pages.demo-keys.index')->assertForbidden();
 });
 
 test('generate, mint and verify round-trip without ever displaying the seed', function () {
@@ -198,7 +195,7 @@ test('desk setup repeat runs are stable no-ops', function () {
 });
 
 test('convert turns a demo key into a live deployment with a shown-once claim code', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(makeSecretsAdmin());
 
     $product = Product::factory()->create(['slug' => 'flowedu']);
     $key = DemoKey::factory()->create();
@@ -228,7 +225,7 @@ test('convert turns a demo key into a live deployment with a shown-once claim co
 });
 
 test('convert works on expired keys', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(makeSecretsAdmin());
 
     $product = Product::factory()->create(['slug' => 'flowedu']);
     $key = DemoKey::factory()->create(['expires_at' => now()->subDay()]);
@@ -246,7 +243,7 @@ test('convert works on expired keys', function () {
 });
 
 test('converted keys refuse a second conversion', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(makeSecretsAdmin());
 
     $product = Product::factory()->create(['slug' => 'flowedu']);
     $key = DemoKey::factory()->create();
@@ -267,7 +264,7 @@ test('converted keys refuse a second conversion', function () {
 });
 
 test('a failed conversion creates nothing', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(makeSecretsAdmin());
 
     $product = Product::factory()->create(['slug' => 'flowedu']);
     $key = DemoKey::factory()->create();
@@ -293,7 +290,7 @@ test('a failed conversion creates nothing', function () {
 });
 
 test('revoked but unconverted keys still convert', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(makeSecretsAdmin());
 
     $product = Product::factory()->create(['slug' => 'flowedu']);
     $key = DemoKey::factory()->revoked()->create();

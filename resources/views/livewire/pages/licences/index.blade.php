@@ -9,6 +9,11 @@ use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    public function mount(): void
+    {
+        $this->authorize('ops.access');
+    }
+
     #[Computed]
     public function deployments(): Collection
     {
@@ -20,6 +25,8 @@ new #[Layout('layouts.app')] class extends Component
      */
     public function licenceState(?Licence $licence): array
     {
+        $this->authorize('ops.access');
+
         if ($licence === null) {
             return ['label' => 'No licence', 'tone' => 'muted'];
         }

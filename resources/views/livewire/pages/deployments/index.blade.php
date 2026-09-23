@@ -15,6 +15,11 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $status = 'all';
 
+    public function mount(): void
+    {
+        $this->authorize('ops.access');
+    }
+
     /**
      * Registry totals for the stat row.
      *
@@ -53,11 +58,15 @@ new #[Layout('layouts.app')] class extends Component
 
     public function updatingSearch(): void
     {
+        $this->authorize('ops.access');
+
         $this->resetPage();
     }
 
     public function updatingStatus(): void
     {
+        $this->authorize('ops.access');
+
         $this->resetPage();
     }
 
