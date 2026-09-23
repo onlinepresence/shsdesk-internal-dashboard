@@ -266,3 +266,85 @@ test('deployment pages render for authenticated users', function () {
         ->assertOk()
         ->assertSee($deployment->school_name);
 });
+
+test('enroll redeems a code for a heartbeat token', function () {
+    $deployment = Deployment::factory()->create(['product' => 'flowedu']);
+
+    $code = EnrollmentCode::mintFor($deployment)['code'];
+
+    $response = $this->postJson('/api/v1/enroll', ['code' => $code, 'product' => 'flowedu']);
+
+    $response->assertOk();
+    $response->assertJsonPath('deployment_uuid', $deployment->uuid);
+    $response->assertJsonPath('licence.tier', 'expired');
+    expect($response->json('heartbeat_token'))->toBeString()->not->toBeEmpty();
+
+    expect($deployment->tokens()->count())->toBe(1);
+    expect(Activity::where('description', 'enrollment.redeemed')->count())->toBe(1);
+});
+
+test('enroll replays a consumed code without minting again', function () {
+    $deployment = Deployment::factory()->create(['product' => 'flowedu']);
+
+    $code = EnrollmentCode::mintFor($deployment)['code'];
+
+    $this->postJson('/api/v1/enroll', ['code' => $code, 'product' => 'flowedu'])->assertOk();
+
+    $replay = $this->postJson('/api/v1/enroll', ['code' => $code, 'product' => 'flowedu']);
+
+    $replay->assertOk();
+    $replay->assertJsonPath('deployment_uuid', $deployment->uuid);
+    expect($replay->json('heartbeat_token'))->toBeNull();
+
+    expect($deployment->tokens()->count())->toBe(1);
+    expect(Activity::where('description', 'enrollment.redeemed')->count())->toBe(1);
+});
+
+test('concurrent double-redeem issues one token and replays the loser', function () {
+    $deployment = Deployment::factory()->create(['product' => 'flowedu']);
+
+    $code = EnrollmentCode::mintFor($deployment)['code'];
+
+    $rival = null;
+    $firing = false;
+
+    EnrollmentCode::retrieved(function (EnrollmentCode $model) use ($code, &$rival, &$firing): void {
+        if ($rival !== null || $firing || ! $model->isUsable()) {
+            return;
+        }
+
+        // A rival redeem slipping in between the first caller's initial
+        // read and its consume. Without the row lock plus the in-lock
+        // consumed re-check, both callers would mint a token.
+        $firing = true;
+
+        try {
+            $rival = $this->postJson('/api/v1/enroll', ['code' => $code, 'product' => 'flowedu']);
+        } finally {
+            $firing = false;
+        }
+    });
+
+    try {
+        $first = $this->postJson('/api/v1/enroll', ['code' => $code, 'product' => 'flowedu']);
+    } finally {
+        EnrollmentCode::flushEventListeners();
+        EnrollmentCode::clearBootedModels();
+    }
+
+    expect($rival)->not->toBeNull();
+
+    $first->assertOk();
+    $rival->assertOk();
+
+    // Exactly one caller wins a token; the loser gets the idempotent
+    // replay answer with no fresh token.
+    $tokens = [$first->json('heartbeat_token'), $rival->json('heartbeat_token')];
+    sort($tokens);
+
+    expect($tokens[0])->toBeNull();
+    expect($tokens[1])->toBeString()->not->toBeEmpty();
+
+    expect($deployment->tokens()->count())->toBe(1);
+    expect(Activity::where('description', 'enrollment.redeemed')->count())->toBe(1);
+});

@@ -9,6 +9,7 @@ use App\Models\EnrollmentCode;
 use App\Models\Licence;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
 class EnrollController extends Controller
 {
@@ -131,25 +132,48 @@ class EnrollController extends Controller
             return $this->rejected($productRejection[1], $productRejection[0]);
         }
 
-        $record->markConsumed();
+        // Consume, touch, and mint atomically. The row lock serializes
+        // concurrent redeems; the loser re-reads consumed_at inside the
+        // lock and takes the idempotent replay answer instead of minting.
+        return DB::transaction(function () use ($record, $deployment, $validated): JsonResponse {
+            $locked = EnrollmentCode::query()
+                ->whereKey($record->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $deployment->update(array_filter([
-            'app_version' => $validated['app_version'] ?? null,
-            'last_seen_at' => now(),
-        ]));
+            if ($locked->isConsumed()) {
+                activity('enrollment')
+                    ->performedOn($locked)
+                    ->causedBy($deployment)
+                    ->log('enrollment.redeem_replayed');
 
-        $token = $deployment->createToken('heartbeat', [Deployment::HEARTBEAT_ABILITY]);
+                return response()->json([
+                    'deployment_uuid' => $deployment->uuid,
+                    'heartbeat_token' => null,
+                    'licence' => Licence::heartbeatResponse($deployment->latestLicence)['licence'],
+                ]);
+            }
 
-        activity('enrollment')
-            ->performedOn($record)
-            ->causedBy($deployment)
-            ->log('enrollment.redeemed');
+            $locked->markConsumed();
 
-        return response()->json([
-            'deployment_uuid' => $deployment->uuid,
-            'heartbeat_token' => $token->plainTextToken,
-            'licence' => Licence::heartbeatResponse($deployment->latestLicence)['licence'],
-        ]);
+            $deployment->update(array_filter([
+                'app_version' => $validated['app_version'] ?? null,
+                'last_seen_at' => now(),
+            ]));
+
+            $token = $deployment->createToken('heartbeat', [Deployment::HEARTBEAT_ABILITY]);
+
+            activity('enrollment')
+                ->performedOn($locked)
+                ->causedBy($deployment)
+                ->log('enrollment.redeemed');
+
+            return response()->json([
+                'deployment_uuid' => $deployment->uuid,
+                'heartbeat_token' => $token->plainTextToken,
+                'licence' => Licence::heartbeatResponse($deployment->latestLicence)['licence'],
+            ]);
+        });
     }
 
     /**
