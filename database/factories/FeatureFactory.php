@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Feature;
+use App\Models\Product;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,6 +19,10 @@ class FeatureFactory extends Factory
     public function definition(): array
     {
         return [
+            'product_id' => Product::query()->firstOrCreate(
+                ['slug' => 'flowedu'],
+                ['name' => 'FlowEdu', 'active' => true],
+            )->id,
             'key' => 'feature_'.$this->faker->unique()->slug(2),
             'label' => ucfirst($this->faker->words(3, true)),
             'description' => $this->faker->sentence(),

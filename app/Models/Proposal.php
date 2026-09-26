@@ -97,7 +97,7 @@ class Proposal extends Model
                 'type' => $section->type,
                 'config' => $section->config,
             ])->all(),
-            'pricing_snapshot' => ProposalPricing::snapshot(),
+            'pricing_snapshot' => ProposalPricing::snapshot($template->product_id),
             'status' => self::STATUS_DRAFT,
         ]);
     }

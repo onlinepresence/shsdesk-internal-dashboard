@@ -13,30 +13,31 @@ use App\Models\Setting;
 class ProposalPricing
 {
     /**
-     * Full snapshot for freezing onto an instance.
+     * Full snapshot for freezing onto an instance. Product-scoped rows
+     * win over globals, so each proposal prices its own product.
      *
      * @return array{currency: string, modules: list<array{key: string, label: string, onetime: float, renew: float}>, bands: list<array{key: string, label: string, range: string, upfront: float, renew: float, custom: bool}>}
      */
-    public static function snapshot(): array
+    public static function snapshot(?int $productId = null): array
     {
         return [
-            'currency' => static::currency(),
-            'modules' => static::moduleRows(),
-            'bands' => static::bandRows(),
+            'currency' => static::currency($productId),
+            'modules' => static::moduleRows(null, $productId),
+            'bands' => static::bandRows(null, $productId),
         ];
     }
 
-    public static function currency(): string
+    public static function currency(?int $productId = null): string
     {
-        return (string) (Setting::get(Setting::CURRENCY, 'GHS') ?? 'GHS');
+        return (string) (Setting::getForProduct($productId, Setting::CURRENCY, 'GHS') ?? 'GHS');
     }
 
     /**
-     * Active catalogue modules with current prices.
+     * Active catalogue modules with current prices, for one product.
      *
      * @return list<array{key: string, label: string, onetime: float, renew: float}>
      */
-    public static function moduleRows(?array $snapshot = null): array
+    public static function moduleRows(?array $snapshot = null, ?int $productId = null): array
     {
         if (is_array($snapshot)) {
             return $snapshot;
@@ -45,6 +46,7 @@ class ProposalPricing
         return Feature::query()
             ->where('kind', 'module')
             ->where('active', true)
+            ->when($productId !== null, fn ($query) => $query->where('product_id', $productId))
             ->orderBy('id')
             ->get()
             ->map(fn (Feature $feature): array => [
@@ -57,11 +59,11 @@ class ProposalPricing
     }
 
     /**
-     * Student bands with upfront/renewal figures.
+     * Student bands with upfront/renewal figures, for one product.
      *
      * @return list<array{key: string, label: string, range: string, upfront: float, renew: float, custom: bool}>
      */
-    public static function bandRows(?array $snapshot = null): array
+    public static function bandRows(?array $snapshot = null, ?int $productId = null): array
     {
         if (is_array($snapshot)) {
             return $snapshot;
@@ -74,6 +76,6 @@ class ProposalPricing
             'upfront' => (float) $band['core_upfront'],
             'renew' => (float) $band['core_renewal'],
             'custom' => (bool) $band['custom'],
-        ], Setting::corePricing());
+        ], Setting::corePricingFor($productId));
     }
 }

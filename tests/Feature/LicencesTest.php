@@ -3,6 +3,7 @@
 use App\Models\Deployment;
 use App\Models\Feature;
 use App\Models\Licence;
+use App\Models\Product;
 use App\Models\Setting;
 use App\Models\User;
 use Database\Seeders\CatalogueSeeder;
@@ -481,6 +482,8 @@ test('catalogue rejects duplicate keys', function () {
 test('pricing globals save from settings and log the diff', function () {
     $this->actingAs(actingSuperAdmin());
 
+    $floweduId = Product::where('slug', 'flowedu')->firstOrFail()->id;
+
     Volt::test('pages.catalogue.index')
         ->set('currency', 'GHS')
         ->set('founding_rate', '0.2')
@@ -493,18 +496,25 @@ test('pricing globals save from settings and log the diff', function () {
         ->assertHasNoErrors()
         ->assertDispatched('toast');
 
-    expect(Setting::get(Setting::FOUNDING_DISCOUNT_RATE))->toBe('0.2');
-    expect(Setting::get(Setting::BUNDLE_DISCOUNT_RATE))->toBe('0.1');
-    expect(Setting::get(Setting::BUNDLE_THRESHOLD))->toBe('3');
-    expect(Setting::get(Setting::HOSTING_MANAGED_FEE))->toBe('1700');
-    expect(Setting::get(Setting::TRAINING_ONSITE_RATE))->toBe('1600');
-    expect(Setting::corePricing()[0]['core_upfront'])->toBe(4600.0);
-    expect(Setting::corePricing())->toHaveCount(5);
-    expect(Setting::corePricing()[4]['custom'])->toBeTrue();
+    // Saving writes the picked product's overrides; shared globals stay
+    // untouched as fallback.
+    expect(Setting::getForProduct($floweduId, Setting::FOUNDING_DISCOUNT_RATE))->toBe('0.2');
+    expect(Setting::getForProduct($floweduId, Setting::BUNDLE_DISCOUNT_RATE))->toBe('0.1');
+    expect(Setting::getForProduct($floweduId, Setting::BUNDLE_THRESHOLD))->toBe('3');
+    expect(Setting::getForProduct($floweduId, Setting::HOSTING_MANAGED_FEE))->toBe('1700');
+    expect(Setting::getForProduct($floweduId, Setting::TRAINING_ONSITE_RATE))->toBe('1600');
+    expect(Setting::corePricingFor($floweduId)[0]['core_upfront'])->toBe(4600.0);
+    expect(Setting::corePricingFor($floweduId))->toHaveCount(5);
+    expect(Setting::corePricingFor($floweduId)[4]['custom'])->toBeTrue();
+
+    expect(Setting::get(Setting::FOUNDING_DISCOUNT_RATE))->toBe('0.15');
+    expect(Setting::get(Setting::BUNDLE_DISCOUNT_RATE))->toBe('0.12');
+    expect(Setting::corePricing()[0]['core_upfront'])->toBe(4500.0);
 
     $logged = Activity::where('description', 'settings.updated')->latest('id')->firstOrFail();
     $properties = $logged->properties->toArray();
 
+    expect($properties['product_id'])->toBe($floweduId);
     expect($properties['before']['bundle_discount_rate'])->toBe('0.12');
     expect($properties['after']['bundle_discount_rate'])->toBe('0.1');
     expect($properties['after']['hosting_managed_fee'])->toBe('1700');

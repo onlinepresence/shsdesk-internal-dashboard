@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Feature;
+use App\Models\Product;
 use Illuminate\Database\Seeder;
 
 class CatalogueSeeder extends Seeder
@@ -42,7 +43,15 @@ class CatalogueSeeder extends Seeder
 
     private function importFeature(string $key, string $label, string $description, string $kind, bool $locked, bool $defaultOn, ?float $basePrice, ?float $renewalBase): void
     {
-        if (Feature::query()->where('key', $key)->exists()) {
+        // The shipped catalogue belongs to FlowEdu; other products grow
+        // their own rows from the catalogue page. Ensured here (not via
+        // seeder order) so this seeder stays runnable standalone.
+        $productId = Product::query()->firstOrCreate(
+            ['slug' => 'flowedu'],
+            ['name' => 'FlowEdu', 'active' => true],
+        )->id;
+
+        if (Feature::query()->where('product_id', $productId)->where('key', $key)->exists()) {
             return;
         }
 
@@ -50,6 +59,7 @@ class CatalogueSeeder extends Seeder
 
         // forceFill: key is deliberately absent from Fillable (immutable).
         $feature->forceFill([
+            'product_id' => $productId,
             'key' => $key,
             'label' => $label,
             'description' => $description,

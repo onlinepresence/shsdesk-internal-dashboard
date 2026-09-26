@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Feature;
+use App\Models\Product;
 use App\Models\Setting;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
@@ -74,31 +75,17 @@ new #[Layout('layouts.app')] class extends Component
 
     public $due_days = null;
 
+    public ?int $product_id = null;
+
+    public bool $show_inactive_products = false;
+
     public function mount(): void
     {
         $this->authorize('manage-catalogue');
 
-        $this->currency = Setting::get(Setting::CURRENCY, 'GHS');
-        $this->bundle_rate = Setting::get(Setting::BUNDLE_DISCOUNT_RATE);
-        $this->bundle_threshold = Setting::get(Setting::BUNDLE_THRESHOLD);
-        $this->founding_rate = Setting::get(Setting::FOUNDING_DISCOUNT_RATE);
-        $this->core_rows = array_values(array_filter(
-            array_map(fn (array $band): ?array => empty($band['custom']) ? [
-                'key' => $band['key'],
-                'label' => $band['label'],
-                'core_upfront' => $band['core_upfront'],
-                'core_renewal' => $band['core_renewal'],
-                'multiplier' => $band['multiplier'],
-            ] : null, Setting::corePricing())
-        ));
-        $this->hosting_self = Setting::get(Setting::HOSTING_SELF_HOSTED_FEE);
-        $this->hosting_managed = Setting::get(Setting::HOSTING_MANAGED_FEE);
-        $this->hosting_none = Setting::get(Setting::HOSTING_NONE_FEE);
-        $this->config_fee = Setting::get(Setting::CONFIG_SETUP_FEE);
-        $this->migration_fee = Setting::get(Setting::MIGRATION_FEE);
-        $this->training_admin = Setting::get(Setting::TRAINING_ADMIN_RATE);
-        $this->training_teacher = Setting::get(Setting::TRAINING_TEACHER_RATE);
-        $this->training_onsite = Setting::get(Setting::TRAINING_ONSITE_RATE);
+        $this->product_id = $this->defaultProductId();
+        $this->loadPricingForm();
+
         $this->doc_title = Setting::get(Setting::INVOICE_DOC_TITLE, 'Proforma Invoice');
         $this->company = Setting::get(Setting::INVOICE_COMPANY, 'Matme Inc.');
         $this->department = Setting::get(Setting::INVOICE_DEPARTMENT);
@@ -108,10 +95,92 @@ new #[Layout('layouts.app')] class extends Component
         $this->due_days = Setting::get(Setting::INVOICE_DUE_DAYS, '30');
     }
 
+    /**
+     * Products for the picker. Active products only, unless explicitly
+     * expanded — inactive products keep catalogues but stay out of the
+     * way by default.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, Product>
+     */
+    #[Computed]
+    public function products(): \Illuminate\Database\Eloquent\Collection
+    {
+        return Product::query()
+            ->when(! $this->show_inactive_products, fn ($query) => $query->where('active', true))
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
+     * First active product, if any. New installs pick FlowEdu; nothing
+     * is pre-selected when every product is inactive.
+     */
+    protected function defaultProductId(): ?int
+    {
+        return Product::query()->where('active', true)->orderBy('name')->value('id');
+    }
+
+    public function updatedProductId(): void
+    {
+        $this->authorize('manage-catalogue');
+
+        $this->resetPage();
+        $this->loadPricingForm();
+    }
+
+    public function updatedShowInactiveProducts(): void
+    {
+        $this->authorize('manage-catalogue');
+
+        if ($this->product_id !== null
+            && ! $this->products->contains('id', $this->product_id)
+        ) {
+            $this->product_id = $this->defaultProductId();
+            $this->loadPricingForm();
+        }
+    }
+
+    /**
+     * Pricing form values effective for the picked product: scoped
+     * overrides win, globals fill the rest.
+     */
+    protected function loadPricingForm(): void
+    {
+        $productId = $this->product_id;
+
+        $this->currency = Setting::getForProduct($productId, Setting::CURRENCY, 'GHS');
+        $this->bundle_rate = Setting::getForProduct($productId, Setting::BUNDLE_DISCOUNT_RATE);
+        $this->bundle_threshold = Setting::getForProduct($productId, Setting::BUNDLE_THRESHOLD);
+        $this->founding_rate = Setting::getForProduct($productId, Setting::FOUNDING_DISCOUNT_RATE);
+        $this->core_rows = array_values(array_filter(
+            array_map(fn (array $band): ?array => empty($band['custom']) ? [
+                'key' => $band['key'],
+                'label' => $band['label'],
+                'core_upfront' => $band['core_upfront'],
+                'core_renewal' => $band['core_renewal'],
+                'multiplier' => $band['multiplier'],
+            ] : null, Setting::corePricingFor($productId))
+        ));
+        $this->hosting_self = Setting::getForProduct($productId, Setting::HOSTING_SELF_HOSTED_FEE);
+        $this->hosting_managed = Setting::getForProduct($productId, Setting::HOSTING_MANAGED_FEE);
+        $this->hosting_none = Setting::getForProduct($productId, Setting::HOSTING_NONE_FEE);
+        $this->config_fee = Setting::getForProduct($productId, Setting::CONFIG_SETUP_FEE);
+        $this->migration_fee = Setting::getForProduct($productId, Setting::MIGRATION_FEE);
+        $this->training_admin = Setting::getForProduct($productId, Setting::TRAINING_ADMIN_RATE);
+        $this->training_teacher = Setting::getForProduct($productId, Setting::TRAINING_TEACHER_RATE);
+        $this->training_onsite = Setting::getForProduct($productId, Setting::TRAINING_ONSITE_RATE);
+        $this->resetValidation();
+    }
+
     #[Computed]
     public function features(): LengthAwarePaginator
     {
-        return Feature::orderBy('id')->paginate(10);
+        return Feature::query()
+            ->when($this->product_id !== null,
+                fn ($query) => $query->where('product_id', $this->product_id),
+                fn ($query) => $query->whereRaw('1 = 0'))
+            ->orderBy('id')
+            ->paginate(10);
     }
 
     public function kindTone(string $kind): string
@@ -180,8 +249,10 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         if ($this->editingId === null) {
+            abort_unless($this->product_id !== null, 422, 'Pick a product first.');
+
             $validated = $this->validate([
-                'key' => ['required', 'string', 'max:255', 'unique:features,key'],
+                'key' => ['required', 'string', 'max:255', Rule::unique('features', 'key')->where('product_id', $this->product_id)],
                 'label' => ['required', 'string', 'max:255'],
                 'description' => ['nullable', 'string'],
                 'kind' => ['required', Rule::in(['core', 'module'])],
@@ -196,6 +267,7 @@ new #[Layout('layouts.app')] class extends Component
 
             // forceFill: key is deliberately absent from Fillable (immutable).
             $feature->forceFill([
+                'product_id' => $this->product_id,
                 'key' => $validated['key'],
                 'label' => $validated['label'],
                 'description' => $validated['description'],
@@ -271,13 +343,17 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
-     * Persist live pricing globals. Everything the quote preview needs
-     * beyond per-feature prices lives here, editable without touching
-     * config. Band ranges stay fixed; only figures change.
+     * Persist pricing for the picked product. Everything the quote
+     * preview needs beyond per-feature prices lives here, editable
+     * without touching config. Writes scoped override rows — globals
+     * stay untouched as fallback. Band ranges stay fixed; only figures
+     * change.
      */
     public function saveGlobals(): void
     {
         $this->authorize('manage-catalogue');
+
+        abort_unless($this->product_id !== null, 422, 'Pick a product first.');
 
         $validated = $this->validate([
             'currency' => ['required', 'string', 'max:10'],
@@ -300,27 +376,28 @@ new #[Layout('layouts.app')] class extends Component
         ]);
 
         $before = $this->globalsSnapshot();
+        $productId = $this->product_id;
 
-        Setting::set(Setting::CURRENCY, $validated['currency']);
-        Setting::set(Setting::BUNDLE_DISCOUNT_RATE, (string) $validated['bundle_rate']);
-        Setting::set(Setting::BUNDLE_THRESHOLD, (string) $validated['bundle_threshold']);
-        Setting::set(Setting::FOUNDING_DISCOUNT_RATE, (string) $validated['founding_rate']);
-        Setting::set(Setting::CORE_PRICING, json_encode($this->mergeCoreRows($validated['core_rows'])));
-        Setting::set(Setting::HOSTING_SELF_HOSTED_FEE, (string) round((float) $validated['hosting_self'], 2));
-        Setting::set(Setting::HOSTING_MANAGED_FEE, (string) round((float) $validated['hosting_managed'], 2));
-        Setting::set(Setting::HOSTING_NONE_FEE, (string) round((float) $validated['hosting_none'], 2));
-        Setting::set(Setting::CONFIG_SETUP_FEE, (string) round((float) $validated['config_fee'], 2));
-        Setting::set(Setting::MIGRATION_FEE, (string) round((float) $validated['migration_fee'], 2));
-        Setting::set(Setting::TRAINING_ADMIN_RATE, (string) round((float) $validated['training_admin'], 2));
-        Setting::set(Setting::TRAINING_TEACHER_RATE, (string) round((float) $validated['training_teacher'], 2));
-        Setting::set(Setting::TRAINING_ONSITE_RATE, (string) round((float) $validated['training_onsite'], 2));
+        Setting::setForProduct($productId, Setting::CURRENCY, $validated['currency']);
+        Setting::setForProduct($productId, Setting::BUNDLE_DISCOUNT_RATE, (string) $validated['bundle_rate']);
+        Setting::setForProduct($productId, Setting::BUNDLE_THRESHOLD, (string) $validated['bundle_threshold']);
+        Setting::setForProduct($productId, Setting::FOUNDING_DISCOUNT_RATE, (string) $validated['founding_rate']);
+        Setting::setForProduct($productId, Setting::CORE_PRICING, json_encode($this->mergeCoreRows($validated['core_rows'])));
+        Setting::setForProduct($productId, Setting::HOSTING_SELF_HOSTED_FEE, (string) round((float) $validated['hosting_self'], 2));
+        Setting::setForProduct($productId, Setting::HOSTING_MANAGED_FEE, (string) round((float) $validated['hosting_managed'], 2));
+        Setting::setForProduct($productId, Setting::HOSTING_NONE_FEE, (string) round((float) $validated['hosting_none'], 2));
+        Setting::setForProduct($productId, Setting::CONFIG_SETUP_FEE, (string) round((float) $validated['config_fee'], 2));
+        Setting::setForProduct($productId, Setting::MIGRATION_FEE, (string) round((float) $validated['migration_fee'], 2));
+        Setting::setForProduct($productId, Setting::TRAINING_ADMIN_RATE, (string) round((float) $validated['training_admin'], 2));
+        Setting::setForProduct($productId, Setting::TRAINING_TEACHER_RATE, (string) round((float) $validated['training_teacher'], 2));
+        Setting::setForProduct($productId, Setting::TRAINING_ONSITE_RATE, (string) round((float) $validated['training_onsite'], 2));
 
         activity('catalogue')
             ->causedBy(Auth::user())
-            ->withProperties(['before' => $before, 'after' => $this->globalsSnapshot()])
+            ->withProperties(['product_id' => $productId, 'before' => $before, 'after' => $this->globalsSnapshot()])
             ->log('settings.updated');
 
-        $this->dispatch('toast', message: __('Pricing globals saved.'));
+        $this->dispatch('toast', message: __('Pricing saved.'));
     }
 
     /**
@@ -372,20 +449,22 @@ new #[Layout('layouts.app')] class extends Component
      */
     protected function globalsSnapshot(): array
     {
+        $productId = $this->product_id;
+
         return [
-            'currency' => Setting::get(Setting::CURRENCY),
-            'bundle_discount_rate' => Setting::get(Setting::BUNDLE_DISCOUNT_RATE),
-            'bundle_threshold' => Setting::get(Setting::BUNDLE_THRESHOLD),
-            'founding_discount_rate' => Setting::get(Setting::FOUNDING_DISCOUNT_RATE),
-            'core_pricing' => Setting::corePricing(),
-            'hosting_self_hosted_fee' => Setting::get(Setting::HOSTING_SELF_HOSTED_FEE),
-            'hosting_managed_fee' => Setting::get(Setting::HOSTING_MANAGED_FEE),
-            'hosting_none_fee' => Setting::get(Setting::HOSTING_NONE_FEE),
-            'config_setup_fee' => Setting::get(Setting::CONFIG_SETUP_FEE),
-            'migration_fee' => Setting::get(Setting::MIGRATION_FEE),
-            'training_admin_rate' => Setting::get(Setting::TRAINING_ADMIN_RATE),
-            'training_teacher_rate' => Setting::get(Setting::TRAINING_TEACHER_RATE),
-            'training_onsite_rate' => Setting::get(Setting::TRAINING_ONSITE_RATE),
+            'currency' => Setting::getForProduct($productId, Setting::CURRENCY),
+            'bundle_discount_rate' => Setting::getForProduct($productId, Setting::BUNDLE_DISCOUNT_RATE),
+            'bundle_threshold' => Setting::getForProduct($productId, Setting::BUNDLE_THRESHOLD),
+            'founding_discount_rate' => Setting::getForProduct($productId, Setting::FOUNDING_DISCOUNT_RATE),
+            'core_pricing' => Setting::corePricingFor($productId),
+            'hosting_self_hosted_fee' => Setting::getForProduct($productId, Setting::HOSTING_SELF_HOSTED_FEE),
+            'hosting_managed_fee' => Setting::getForProduct($productId, Setting::HOSTING_MANAGED_FEE),
+            'hosting_none_fee' => Setting::getForProduct($productId, Setting::HOSTING_NONE_FEE),
+            'config_setup_fee' => Setting::getForProduct($productId, Setting::CONFIG_SETUP_FEE),
+            'migration_fee' => Setting::getForProduct($productId, Setting::MIGRATION_FEE),
+            'training_admin_rate' => Setting::getForProduct($productId, Setting::TRAINING_ADMIN_RATE),
+            'training_teacher_rate' => Setting::getForProduct($productId, Setting::TRAINING_TEACHER_RATE),
+            'training_onsite_rate' => Setting::getForProduct($productId, Setting::TRAINING_ONSITE_RATE),
         ];
     }
 
@@ -413,7 +492,7 @@ new #[Layout('layouts.app')] class extends Component
      */
     protected function mergeCoreRows(array $rows): array
     {
-        $stored = Setting::corePricing();
+        $stored = Setting::corePricingFor($this->product_id);
         $edited = collect($rows)->keyBy('key');
 
         return array_map(fn (array $band): array => $edited->has($band['key']) && empty($band['custom']) ? [
@@ -432,7 +511,24 @@ new #[Layout('layouts.app')] class extends Component
 <div class="py-12">
     <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
         <div class="mb-6 flex flex-col gap-6" x-data="{ tab: 'features' }">
-            <x-section-title title="Catalogue" subtitle="Offerings served from the database. Keys are immutable." />
+            <x-section-title title="Catalogue" subtitle="Offerings served from the database, grouped by product. Keys are immutable." />
+
+            <x-card>
+                <div class="flex flex-wrap items-end gap-4">
+                    <div class="min-w-52 flex-1">
+                        <x-input-label for="product_id" :value="__('Product')" />
+                        <x-select wire:model.live="product_id" id="product_id" name="product_id" class="mt-1 block w-full">
+                            @foreach ($this->products as $product)
+                                <option value="{{ $product->id }}">{{ $product->name }}{{ $product->active ? '' : ' (inactive)' }}</option>
+                            @endforeach
+                        </x-select>
+                    </div>
+                    <label class="flex cursor-pointer items-center gap-2 pb-2">
+                        <input wire:model.live="show_inactive_products" type="checkbox" class="rounded border-slate-300 dark:border-white/20 dark:bg-ink text-brand shadow-sm focus:ring-brand dark:focus:ring-accent dark:focus:ring-offset-deep" />
+                        <span class="text-sm text-slate-600 dark:text-slate-300">{{ __('Include inactive products') }}</span>
+                    </label>
+                </div>
+            </x-card>
 
             <div class="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 dark:border-white/10">
                 <div class="-mb-px flex gap-6" role="tablist" aria-label="Catalogue sections">
@@ -449,7 +545,7 @@ new #[Layout('layouts.app')] class extends Component
 
             <div x-show="tab === 'features'" role="tabpanel" id="panel-features" aria-labelledby="tab-features">
             <x-card>
-                <x-table loading-except="create, edit, cancelEdit, saveGlobals">
+                <x-table loading-except="create, edit, cancelEdit, saveGlobals, product_id, show_inactive_products">
                     <x-table.head>
                         <x-table.row :hover="false">
                             <x-table.heading>Feature</x-table.heading>
@@ -509,6 +605,9 @@ new #[Layout('layouts.app')] class extends Component
 
             <div x-show="tab === 'globals'" role="tabpanel" id="panel-globals" aria-labelledby="tab-globals" style="display: none;">
             <form wire:submit="saveGlobals" class="flex flex-col gap-6">
+                <x-alert tone="info" title="Product pricing" :dismissible="false">
+                    {{ __('Saving writes this product pricing; shared globals stay as fallback. Proposals snapshot these figures at generation.') }}
+                </x-alert>
                 <x-card>
                     <x-slot name="title">Currency &amp; discounts</x-slot>
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

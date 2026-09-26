@@ -8,8 +8,9 @@ use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['label', 'description', 'kind', 'locked', 'default_on', 'base_price', 'renewal_base', 'active'])]
+#[Fillable(['product_id', 'label', 'description', 'kind', 'locked', 'default_on', 'base_price', 'renewal_base', 'active'])]
 class Feature extends Model
 {
     /** @use HasFactory<FeatureFactory> */
@@ -58,5 +59,13 @@ class Feature extends Model
     protected function active(Builder $query): Builder
     {
         return $query->where('active', true);
+    }
+
+    /**
+     * Product this catalogue row belongs to.
+     */
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
     }
 }

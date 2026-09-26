@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['key', 'value'])]
+#[Fillable(['key', 'value', 'product_id'])]
 class Setting extends Model
 {
     /** @use HasFactory<SettingFactory> */
@@ -80,9 +80,13 @@ class Setting extends Model
      */
     public const INVOICE_DUE_DAYS = 'invoicing.due_days';
 
+    /**
+     * Global value (product-agnostic rows only — scoped overrides never
+     * leak into the licence engine, which stays global).
+     */
     public static function get(string $key, ?string $default = null): ?string
     {
-        $value = static::query()->where('key', $key)->value('value');
+        $value = static::query()->where('key', $key)->whereNull('product_id')->value('value');
 
         return $value ?? $default;
     }
@@ -90,7 +94,34 @@ class Setting extends Model
     public static function set(string $key, mixed $value): Setting
     {
         return static::query()->updateOrCreate(
-            ['key' => $key],
+            ['key' => $key, 'product_id' => null],
+            ['value' => $value === null ? null : (string) $value],
+        );
+    }
+
+    /**
+     * Product value with global fallback. Null product reads global.
+     */
+    public static function getForProduct(?int $productId, string $key, ?string $default = null): ?string
+    {
+        if ($productId !== null) {
+            $value = static::query()->where('key', $key)->where('product_id', $productId)->value('value');
+
+            if ($value !== null) {
+                return $value;
+            }
+        }
+
+        return static::get($key, $default);
+    }
+
+    /**
+     * Persist a product-scoped override. Globals are never touched.
+     */
+    public static function setForProduct(int $productId, string $key, mixed $value): Setting
+    {
+        return static::query()->updateOrCreate(
+            ['key' => $key, 'product_id' => $productId],
             ['value' => $value === null ? null : (string) $value],
         );
     }
@@ -117,6 +148,16 @@ class Setting extends Model
     public static function corePricing(): array
     {
         return static::decodeCorePricing(static::get(static::CORE_PRICING, '[]'));
+    }
+
+    /**
+     * Core pricing bands for a product, falling back to global.
+     *
+     * @return list<array{key: string, label: string, min: int, max: ?int, core_upfront: float, core_renewal: float, multiplier: float, custom: bool}>
+     */
+    public static function corePricingFor(?int $productId): array
+    {
+        return static::decodeCorePricing(static::getForProduct($productId, static::CORE_PRICING, '[]'));
     }
 
     /**

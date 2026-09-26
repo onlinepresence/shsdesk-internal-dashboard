@@ -4,6 +4,7 @@ use App\Models\ProposalTemplate;
 use App\Models\TemplateSection;
 use App\Support\HtmlSanitizer;
 use App\Support\ProposalPlaceholders;
+use App\Support\ProposalPricing;
 use App\Support\ProposalRenderer;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -58,8 +59,8 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
-     * Unsaved draft through the shared renderer with sample fills — the
-     * same fragment the PDF download uses, so the two cannot diverge.
+     * Unsaved draft through the shared renderer with sample fills and the
+     * template product's live pricing — the same fragment the PDF uses.
      */
     public function previewHtml(): string
     {
@@ -71,6 +72,7 @@ new #[Layout('layouts.app')] class extends Component
                 'config' => $section['source'] !== null ? ['source' => $section['source']] : null,
             ], $this->sections),
             ProposalRenderer::sampleValues(),
+            ProposalPricing::snapshot($this->template->product_id),
         ));
     }
 
