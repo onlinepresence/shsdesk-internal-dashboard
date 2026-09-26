@@ -481,13 +481,19 @@ new #[Layout('layouts.app')] class extends Component
                                     <x-badge :tone="$feature->active ? 'success' : 'muted'">{{ $feature->active ? 'Active' : 'Inactive' }}</x-badge>
                                 </x-table.cell>
                                 <x-table.cell>
-                                    <span class="flex items-center gap-2">
-                                        <x-tertiary-button type="button" wire:click="edit({{ $feature->id }})">
-                                            {{ __('Edit') }}
-                                        </x-tertiary-button>
-                                        <x-tertiary-button type="button" wire:click="toggleActive({{ $feature->id }})">
-                                            {{ $feature->active ? __('Deactivate') : __('Activate') }}
-                                        </x-tertiary-button>
+                                    <span class="flex items-center gap-1">
+                                        <x-icon-button tone="brand" wire:click="edit({{ $feature->id }})" label="Edit feature">
+                                            <x-lucide-pencil class="w-4 h-4" aria-hidden="true" />
+                                        </x-icon-button>
+                                        @if ($feature->active)
+                                            <x-icon-button tone="danger" wire:click="toggleActive({{ $feature->id }})" label="Deactivate feature">
+                                                <x-lucide-power class="w-4 h-4" aria-hidden="true" />
+                                            </x-icon-button>
+                                        @else
+                                            <x-icon-button tone="success" wire:click="toggleActive({{ $feature->id }})" label="Activate feature">
+                                                <x-lucide-check class="w-4 h-4" aria-hidden="true" />
+                                            </x-icon-button>
+                                        @endif
                                     </span>
                                 </x-table.cell>
                             </x-table.row>

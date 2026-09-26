@@ -74,9 +74,11 @@ new #[Layout('layouts.app')] class extends Component
                                     </x-table.cell>
                                     <x-table.cell>{{ $deployment->latestLicence?->expires_at?->diffForHumans() ?? '—' }}</x-table.cell>
                                     <x-table.cell>
-                                        <x-button-link :href="route('licences.edit', $deployment->uuid)" variant="tertiary">
-                                            {{ __('Manage') }}
-                                        </x-button-link>
+                                        <span class="flex items-center gap-1">
+                                            <x-icon-button tone="brand" :href="route('licences.edit', $deployment->uuid)" wire:navigate label="Manage licence">
+                                                <x-lucide-pencil class="w-4 h-4" aria-hidden="true" />
+                                            </x-icon-button>
+                                        </span>
                                     </x-table.cell>
                                 </x-table.row>
                             @endforeach

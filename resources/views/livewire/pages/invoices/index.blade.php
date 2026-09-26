@@ -232,17 +232,17 @@ new #[Layout('layouts.app')] class extends Component
                                     <x-table.cell>
                                         <span class="flex items-center gap-1">
                                             @if ($invoice->deployment)
-                                                <a href="{{ route('licences.invoices.show', [$invoice->deployment->uuid, $invoice->id]) }}" target="_blank" rel="noopener" aria-label="Print invoice" title="Print" class="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-300 dark:focus:ring-accent">
+                                                <x-icon-button :href="route('licences.invoices.show', [$invoice->deployment->uuid, $invoice->id])" target="_blank" rel="noopener" label="Print invoice">
                                                     <x-lucide-printer class="w-4 h-4" aria-hidden="true" />
-                                                </a>
+                                                </x-icon-button>
                                             @endif
                                             @if ($invoice->isPending())
-                                                <button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'invoice-edit'); $wire.beginEdit({{ $invoice->id }})" aria-label="Edit invoice" title="Edit" class="rounded-md p-1.5 text-brand hover:bg-brand/10 hover:text-deep focus:outline-none focus:ring-2 focus:ring-brand dark:text-slate-200 dark:hover:bg-white/10 dark:hover:text-white dark:focus:ring-accent">
+                                                <x-icon-button tone="brand" x-data="" x-on:click.prevent="$dispatch('open-modal', 'invoice-edit'); $wire.beginEdit({{ $invoice->id }})" label="Edit invoice">
                                                     <x-lucide-pencil class="w-4 h-4" aria-hidden="true" />
-                                                </button>
-                                                <button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'invoice-delete'); $wire.set('deletingId', {{ $invoice->id }})" aria-label="Delete invoice" title="Delete" class="rounded-md p-1.5 text-red-500 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300">
+                                                </x-icon-button>
+                                                <x-icon-button tone="danger" x-data="" x-on:click.prevent="$dispatch('open-modal', 'invoice-delete'); $wire.set('deletingId', {{ $invoice->id }})" label="Delete invoice">
                                                     <x-lucide-trash-2 class="w-4 h-4" aria-hidden="true" />
-                                                </button>
+                                                </x-icon-button>
                                             @endif
                                         </span>
                                     </x-table.cell>

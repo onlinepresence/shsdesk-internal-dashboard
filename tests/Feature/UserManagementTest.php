@@ -9,9 +9,11 @@ use App\Support\EnvWriter;
 use Database\Seeders\CatalogueSeeder;
 use Database\Seeders\SettingsSeeder;
 use Database\Seeders\SuperAdminSeeder;
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Role;
@@ -310,4 +312,86 @@ test('permission-gated sidebar hides users without the grant', function () {
     $this->actingAs(owner());
 
     $this->get(route('dashboard'))->assertSee('/users', false);
+});
+
+test('direct permissions toggle abilities without roles', function () {
+    $staff = User::factory()->create();
+
+    $this->actingAs($staff);
+    $this->get(route('users.index'))->assertForbidden();
+
+    $staff->givePermissionTo('manage-users');
+
+    $this->get(route('users.index'))->assertOk();
+
+    $staff->revokePermissionTo('manage-users');
+
+    $this->get(route('users.index'))->assertForbidden();
+});
+
+test('access form saves direct permissions end to end', function () {
+    $staff = User::factory()->create();
+
+    $this->actingAs(owner());
+
+    Volt::test('pages.users.index')
+        ->call('openRolesModal', $staff->id)
+        ->set('edit_permissions', ['ops.access'])
+        ->call('saveRoles')
+        ->assertHasNoErrors();
+
+    expect($staff->refresh()->hasPermissionTo('ops.access'))->toBeTrue();
+
+    $this->actingAs($staff);
+    $this->get(route('deployments.index'))->assertOk();
+    $this->get(route('users.index'))->assertForbidden();
+});
+
+test('own row shows a marker instead of management buttons', function () {
+    $admin = owner();
+    User::factory()->create();
+
+    $this->actingAs($admin);
+
+    $content = $this->get(route('users.index'))->assertOk()->getContent();
+
+    expect($content)->toContain('You');
+    // The staffer row carries icon buttons (aria-label plus title each);
+    // the own row carries none.
+    expect(substr_count($content, 'Edit access'))->toBe(2);
+    expect(substr_count($content, 'Resend invite'))->toBe(2);
+});
+
+test('unverified staff see the resend banner on app pages', function () {
+    $this->actingAs(User::factory()->unverified()->create());
+
+    $this->get(route('profile'))
+        ->assertOk()
+        ->assertSee('Resend confirmation email');
+});
+
+test('banner hides on the verification notice and for verified staff', function () {
+    $this->actingAs(User::factory()->unverified()->create());
+
+    $this->get(route('verification.notice'))
+        ->assertOk()
+        ->assertDontSee('Resend confirmation email');
+
+    $this->actingAs(User::factory()->create());
+
+    $this->get(route('profile'))->assertDontSee('Resend confirmation email');
+});
+
+test('banner resends the confirmation email', function () {
+    Notification::fake();
+
+    $user = User::factory()->unverified()->create();
+
+    $this->actingAs($user);
+
+    Volt::test('layout.verify-banner')
+        ->call('sendVerification')
+        ->assertHasNoErrors();
+
+    Notification::assertSentTo($user, VerifyEmail::class);
 });

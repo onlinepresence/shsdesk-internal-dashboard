@@ -196,23 +196,23 @@ new #[Layout('layouts.app')] class extends Component
                                         <x-badge :tone="$this->statusTone($lead->status)">{{ ucfirst($lead->status) }}</x-badge>
                                     </x-table.cell>
                                     <x-table.cell>
-                                        <span class="flex items-center gap-2">
-                                            <button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'lead-detail'); $wire.set('viewingId', {{ $lead->id }})" class="text-sm font-medium text-brand underline hover:text-deep dark:text-slate-200 dark:hover:text-white">
-                                                {{ __('View') }}
-                                            </button>
+                                        <span class="flex items-center gap-1">
+                                            <x-icon-button x-data="" x-on:click.prevent="$dispatch('open-modal', 'lead-detail'); $wire.set('viewingId', {{ $lead->id }})" label="View lead">
+                                                <x-lucide-eye class="w-4 h-4" aria-hidden="true" />
+                                            </x-icon-button>
                                             @if ($lead->status !== Lead::STATUS_CONVERTED)
-                                                <x-tertiary-button type="button" wire:click="convert({{ $lead->id }})">
-                                                    {{ __('Convert') }}
-                                                </x-tertiary-button>
+                                                <x-icon-button tone="brand" wire:click="convert({{ $lead->id }})" label="Convert lead">
+                                                    <x-lucide-arrow-right class="w-4 h-4" aria-hidden="true" />
+                                                </x-icon-button>
                                             @endif
                                             @if ($lead->status === Lead::STATUS_NEW)
-                                                <x-tertiary-button type="button" wire:click="markReviewed({{ $lead->id }})">
-                                                    {{ __('Reviewed') }}
-                                                </x-tertiary-button>
+                                                <x-icon-button tone="success" wire:click="markReviewed({{ $lead->id }})" label="Mark reviewed">
+                                                    <x-lucide-check class="w-4 h-4" aria-hidden="true" />
+                                                </x-icon-button>
                                             @endif
-                                            <button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'lead-delete'); $wire.set('deletingId', {{ $lead->id }})" class="text-sm font-medium text-red-500 underline hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
-                                                {{ __('Delete') }}
-                                            </button>
+                                            <x-icon-button tone="danger" x-data="" x-on:click.prevent="$dispatch('open-modal', 'lead-delete'); $wire.set('deletingId', {{ $lead->id }})" label="Delete lead">
+                                                <x-lucide-trash-2 class="w-4 h-4" aria-hidden="true" />
+                                            </x-icon-button>
                                         </span>
                                     </x-table.cell>
                                 </x-table.row>

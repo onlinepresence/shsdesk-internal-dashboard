@@ -124,9 +124,17 @@ new #[Layout('layouts.app')] class extends Component
                                     <x-table.cell>{{ $product->open_leads_count }}</x-table.cell>
                                     <x-table.cell>{{ $product->licences_count }}</x-table.cell>
                                     <x-table.cell>
-                                        <x-tertiary-button type="button" wire:click="toggleActive({{ $product->id }})">
-                                            {{ $product->active ? __('Deactivate') : __('Activate') }}
-                                        </x-tertiary-button>
+                                        <span class="flex items-center gap-1">
+                                            @if ($product->active)
+                                                <x-icon-button tone="danger" wire:click="toggleActive({{ $product->id }})" label="Deactivate product">
+                                                    <x-lucide-power class="w-4 h-4" aria-hidden="true" />
+                                                </x-icon-button>
+                                            @else
+                                                <x-icon-button tone="success" wire:click="toggleActive({{ $product->id }})" label="Activate product">
+                                                    <x-lucide-check class="w-4 h-4" aria-hidden="true" />
+                                                </x-icon-button>
+                                            @endif
+                                        </span>
                                     </x-table.cell>
                                 </x-table.row>
                             @endforeach

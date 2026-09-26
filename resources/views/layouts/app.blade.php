@@ -37,6 +37,8 @@
 
             <!-- Offset for the fixed desktop sidebar; existing pages render untouched below. -->
             <div class="lg:pl-64">
+                <livewire:layout.verify-banner />
+
                 <!-- Page Heading -->
                 @if (isset($header))
                     <header class="bg-white dark:bg-gray-800 shadow">

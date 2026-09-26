@@ -420,25 +420,25 @@ new #[Layout('layouts.app')] class extends Component
                                         @endif
                                     </x-table.cell>
                                     <x-table.cell>
-                                        <span class="flex items-center gap-2">
+                                        <span class="flex items-center gap-1">
                                             @if ($key->isConverted() && $key->convertedDeployment !== null)
-                                                <x-button-link :href="route('deployments.show', $key->convertedDeployment)" wire:navigate variant="tertiary">
-                                                    {{ __('View deployment') }}
-                                                </x-button-link>
+                                                <x-icon-button :href="route('deployments.show', $key->convertedDeployment)" wire:navigate label="View deployment">
+                                                    <x-lucide-eye class="w-4 h-4" aria-hidden="true" />
+                                                </x-icon-button>
                                             @else
-                                                <x-tertiary-button type="button" wire:click="openConvertModal({{ $key->id }})">
-                                                    {{ __('Convert to live') }}
-                                                </x-tertiary-button>
+                                                <x-icon-button tone="brand" wire:click="openConvertModal({{ $key->id }})" label="Convert to live">
+                                                    <x-lucide-arrow-right class="w-4 h-4" aria-hidden="true" />
+                                                </x-icon-button>
                                             @endif
                                             @if (! $this->signingKeyMissing)
-                                                <x-button-link :href="route('demo-keys.download', $key)" variant="tertiary">
-                                                    {{ __('Download') }}
-                                                </x-button-link>
+                                                <x-icon-button :href="route('demo-keys.download', $key)" label="Download key">
+                                                    <x-lucide-download class="w-4 h-4" aria-hidden="true" />
+                                                </x-icon-button>
                                             @endif
                                             @if (! $key->isRevoked())
-                                                <button type="button" x-data="" x-on:click.prevent="$dispatch('open-modal', 'demo-delete'); $wire.set('deletingId', {{ $key->id }})" class="text-sm font-medium text-red-500 underline hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
-                                                    {{ __('Revoke') }}
-                                                </button>
+                                                <x-icon-button tone="danger" x-data="" x-on:click.prevent="$dispatch('open-modal', 'demo-delete'); $wire.set('deletingId', {{ $key->id }})" label="Revoke key">
+                                                    <x-lucide-ban class="w-4 h-4" aria-hidden="true" />
+                                                </x-icon-button>
                                             @endif
                                         </span>
                                     </x-table.cell>
