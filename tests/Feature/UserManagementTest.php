@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\RequirePasswordChange;
 use App\Livewire\SetupPanel;
 use App\Mail\UserInviteMail;
 use App\Models\Feature;
@@ -10,6 +11,7 @@ use Database\Seeders\CatalogueSeeder;
 use Database\Seeders\SettingsSeeder;
 use Database\Seeders\SuperAdminSeeder;
 use Illuminate\Auth\Notifications\VerifyEmail;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -84,6 +86,54 @@ test('flagged users are fenced to profile until they rotate', function () {
         ->assertRedirect('/');
 
     $this->assertGuest();
+});
+
+test('flagged users cannot smuggle ops actions past the fence', function () {
+    $flagged = owner(['must_change_password' => true]);
+    $middleware = new RequirePasswordChange;
+
+    $resolver = fn () => $flagged;
+    $next = fn () => response('reached');
+
+    // An ops component update replayed past the route middleware bounces.
+    $smuggled = Request::create('livewire/update', 'POST', [
+        'components' => [
+            ['snapshot' => ['memo' => ['name' => 'pages.deployments.create']]],
+        ],
+    ]);
+    $smuggled->setUserResolver($resolver);
+
+    $response = $middleware->handle($smuggled, $next);
+
+    expect($response->isRedirect(route('profile')))->toBeTrue();
+
+    // Unknown shapes fail closed too.
+    $shapeless = Request::create('livewire/update', 'POST');
+    $shapeless->setUserResolver($resolver);
+
+    expect($middleware->handle($shapeless, $next)->isRedirect(route('profile')))->toBeTrue();
+
+    // The password form and logout shell still pass through.
+    foreach (['profile.update-password-form', 'layout.navigation', 'layout.verify-banner'] as $name) {
+        $allowed = Request::create('livewire/update', 'POST', [
+            'components' => [
+                ['snapshot' => ['memo' => ['name' => $name]]],
+            ],
+        ]);
+        $allowed->setUserResolver($resolver);
+
+        expect($middleware->handle($allowed, $next)->getContent())->toBe('reached');
+    }
+
+    // Unflagged users are unaffected everywhere.
+    $plain = Request::create('livewire/update', 'POST', [
+        'components' => [
+            ['snapshot' => ['memo' => ['name' => 'pages.deployments.create']]],
+        ],
+    ]);
+    $plain->setUserResolver(fn () => owner());
+
+    expect($middleware->handle($plain, $next)->getContent())->toBe('reached');
 });
 
 test('unflagged users move freely', function () {
