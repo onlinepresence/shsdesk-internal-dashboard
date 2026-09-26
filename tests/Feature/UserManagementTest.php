@@ -344,6 +344,7 @@ test('setup panel actions seed and generate idempotently', function () {
             ->call('generateSigningKey')
             ->assertHasNoErrors();
 
+        expect(config('licence-export.signing_key'))->toHaveLength(64);
         expect((new EnvWriter($writerPath))->readValue('LICENCE_SIGNING_KEY'))->toHaveLength(64);
     } finally {
         @unlink($writerPath);
@@ -352,6 +353,49 @@ test('setup panel actions seed and generate idempotently', function () {
     $this->actingAs(User::factory()->create());
 
     Livewire::test(SetupPanel::class)->assertForbidden();
+});
+
+test('setup panel buttons resolve their gaps', function () {
+    config()->set('mail.from.address', 'hello@example.com');
+
+    $writerPath = tempnam(sys_get_temp_dir(), 'setupenv');
+    file_put_contents($writerPath, '');
+    $this->app->instance(EnvWriter::class, new EnvWriter($writerPath));
+
+    try {
+        $this->actingAs(owner());
+
+        // Boot with a valid key, then open the gap only across the call:
+        // an empty key breaks view rendering itself.
+        $panel = Livewire::test(SetupPanel::class);
+
+        config()->set('app.key', '');
+
+        $panel->call('generateAppKey')->assertHasNoErrors();
+
+        expect(config('app.key'))->toStartWith('base64:');
+        expect((new EnvWriter($writerPath))->readValue('APP_KEY'))->toStartWith('base64:');
+
+        // A present key is never regenerated over.
+        Livewire::test(SetupPanel::class)
+            ->call('generateAppKey')
+            ->assertHasErrors(['app_key']);
+
+        Livewire::test(SetupPanel::class)
+            ->set('mail_from', 'desk@example.com')
+            ->call('saveMailFrom')
+            ->assertHasNoErrors();
+
+        expect(config('mail.from.address'))->toBe('desk@example.com');
+        expect((new EnvWriter($writerPath))->readValue('MAIL_FROM_ADDRESS'))->toBe('desk@example.com');
+
+        Livewire::test(SetupPanel::class)
+            ->set('mail_from', 'not-an-email')
+            ->call('saveMailFrom')
+            ->assertHasErrors(['mail_from']);
+    } finally {
+        @unlink($writerPath);
+    }
 });
 
 test('permission-gated sidebar hides users without the grant', function () {

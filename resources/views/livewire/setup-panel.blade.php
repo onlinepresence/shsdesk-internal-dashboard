@@ -13,13 +13,20 @@
                 <li class="flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <p class="text-sm font-medium text-slate-900 dark:text-white">Application key</p>
-                        <p class="text-sm text-slate-500 dark:text-slate-400">Encrypts sessions and cookies. Set it once via <code class="font-mono">php artisan desk:setup</code>.</p>
+                        <p class="text-sm text-slate-500 dark:text-slate-400">Encrypts sessions and cookies. Fresh installs only — never regenerate over live data.</p>
+                        <x-input-error :messages="$errors->get('app_key')" class="mt-1" />
                     </div>
-                    @if (empty(config('app.key')))
-                        <x-badge tone="muted">SKIP</x-badge>
-                    @else
-                        <x-badge tone="success">DONE</x-badge>
-                    @endif
+                    <span class="flex items-center gap-2">
+                        @if (empty(config('app.key')))
+                            <x-badge tone="muted">SKIP</x-badge>
+                            <x-secondary-button type="button" wire:click="generateAppKey" wire:loading.attr="disabled" wire:target="generateAppKey">
+                                <span wire:loading.remove wire:target="generateAppKey">{{ __('Generate key') }}</span>
+                                <span wire:loading wire:target="generateAppKey">{{ __('Generating…') }}</span>
+                            </x-secondary-button>
+                        @else
+                            <x-badge tone="success">DONE</x-badge>
+                        @endif
+                    </span>
                 </li>
 
                 <li class="flex flex-wrap items-center justify-between gap-3">
@@ -64,18 +71,26 @@
                 </li>
 
                 <li class="flex flex-wrap items-center justify-between gap-3">
-                    <div>
+                    <div class="min-w-0 flex-1">
                         <p class="text-sm font-medium text-slate-900 dark:text-white">Mail sender</p>
                         @if ($this->mailFrom !== null)
                             <p class="text-sm text-slate-500 dark:text-slate-400">Invites send from <code class="font-mono">{{ $this->mailFrom }}</code>.</p>
                         @else
-                            <p class="text-sm text-slate-500 dark:text-slate-400">Set <code class="font-mono">MAIL_FROM_ADDRESS</code> in <code class="font-mono">.env</code> (see the Laravel mail documentation) so staff invites reach real inboxes.</p>
+                            <p class="text-sm text-slate-500 dark:text-slate-400">Staff invites send from here — save it once into <code class="font-mono">MAIL_FROM_ADDRESS</code>.</p>
                         @endif
+                        <x-input-error :messages="$errors->get('mail_from')" class="mt-1" />
                     </div>
                     @if ($this->mailFrom !== null)
                         <x-badge tone="success">DONE</x-badge>
                     @else
-                        <x-badge tone="muted">SKIP</x-badge>
+                        <span class="flex items-center gap-2">
+                            <x-badge tone="muted">SKIP</x-badge>
+                            <x-text-input wire:model="mail_from" type="email" placeholder="desk@example.com" aria-label="Mail sender address" class="w-56" />
+                            <x-secondary-button type="button" wire:click="saveMailFrom" wire:loading.attr="disabled" wire:target="saveMailFrom">
+                                <span wire:loading.remove wire:target="saveMailFrom">{{ __('Save sender') }}</span>
+                                <span wire:loading wire:target="saveMailFrom">{{ __('Saving…') }}</span>
+                            </x-secondary-button>
+                        </span>
                     @endif
                 </li>
             </ul>

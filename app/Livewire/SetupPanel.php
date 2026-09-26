@@ -13,6 +13,8 @@ use Livewire\Component;
 
 class SetupPanel extends Component
 {
+    public string $mail_from = '';
+
     public function mount(): void
     {
         $this->ensureSuperAdmin();
@@ -64,6 +66,40 @@ class SetupPanel extends Component
     }
 
     /**
+     * Generate the application key into .env. Only reachable while the
+     * key is missing (fresh installs), so no live ciphertext is ever at
+     * risk; later requests read the file fresh.
+     */
+    public function generateAppKey(): void
+    {
+        $this->ensureSuperAdmin();
+
+        if (! empty(config('app.key'))) {
+            $this->addError('app_key', __('APP_KEY is already set. Nothing was written.'));
+
+            return;
+        }
+
+        $key = 'base64:'.base64_encode(random_bytes(32));
+
+        if (! app(EnvWriter::class)->ensurePresent('APP_KEY', $key)) {
+            $this->addError('app_key', __('APP_KEY is already set. Nothing was written.'));
+
+            return;
+        }
+
+        config()->set('app.key', $key);
+
+        activity('setup')
+            ->causedBy(Auth::user())
+            ->log('setup.app_key_generated');
+
+        unset($this->shouldShow);
+
+        session()->flash('status', __('Application key generated.'));
+    }
+
+    /**
      * Generate the Ed25519 seed into .env — the same path the demo-keys
      * page uses. Full key UI lives there; this panel only links to it.
      */
@@ -108,6 +144,39 @@ class SetupPanel extends Component
         unset($this->shouldShow, $this->catalogueReady);
 
         session()->flash('status', __('Catalogue and settings seeded.'));
+    }
+
+    /**
+     * Persist the staff-invite sender address into .env. Append-only like
+     * every other first-run write — an existing value is never replaced
+     * from here; change it in the file directly.
+     */
+    public function saveMailFrom(): void
+    {
+        $this->ensureSuperAdmin();
+
+        $validated = $this->validate([
+            'mail_from' => ['required', 'string', 'lowercase', 'email', 'max:255'],
+        ]);
+
+        if (! app(EnvWriter::class)->ensurePresent('MAIL_FROM_ADDRESS', $validated['mail_from'])) {
+            $this->addError('mail_from', __('MAIL_FROM_ADDRESS is already set. Nothing was written.'));
+
+            return;
+        }
+
+        config()->set('mail.from.address', $validated['mail_from']);
+
+        activity('setup')
+            ->causedBy(Auth::user())
+            ->withProperties(['address' => $validated['mail_from']])
+            ->log('setup.mail_from_saved');
+
+        $this->reset('mail_from');
+
+        unset($this->mailFrom, $this->shouldShow);
+
+        session()->flash('status', __('Mail sender saved.'));
     }
 
     public function render()
