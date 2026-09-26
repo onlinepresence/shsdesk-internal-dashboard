@@ -33,6 +33,8 @@ return [
                 ['label' => 'Deployments', 'route' => 'deployments.index', 'icon' => 'server', 'can' => 'ops.access'],
                 ['label' => 'Licences', 'route' => 'licences.index', 'icon' => 'key', 'can' => 'ops.access'],
                 ['label' => 'Invoices', 'route' => 'invoices.index', 'icon' => 'receipt', 'can' => 'ops.access'],
+                ['label' => 'Proposals', 'route' => 'proposals.index', 'icon' => 'file-text', 'can' => 'ops.access'],
+                ['label' => 'Templates', 'route' => 'proposal-templates.index', 'icon' => 'layout-template', 'can' => 'ops.access'],
                 ['label' => 'Catalogue', 'route' => 'catalogue.index', 'icon' => 'sliders', 'can' => 'manage-catalogue'],
                 ['label' => 'Users', 'route' => 'users.index', 'icon' => 'users', 'can' => 'manage-users'],
             ],

@@ -1,3 +1,28 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Proposal document fragment (editor preview pane). The PDF layout carries
+its own print styles; Word rebuilds from the same blocks. */
+.proposal-section { margin-bottom: 1.5rem; }
+.proposal-heading { font-size: 1.125rem; font-weight: 600; margin-bottom: 0.5rem; }
+.proposal-body { font-size: 0.875rem; line-height: 1.6; }
+.proposal-body p { margin: 0.25rem 0; }
+table.proposal-table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.8125rem; }
+table.proposal-table th, table.proposal-table td { border: 1px solid rgb(203 213 225); padding: 0.375rem 0.625rem; text-align: left; }
+table.proposal-table th { background: rgb(248 250 252); font-weight: 600; }
+table.proposal-signoff { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.8125rem; }
+table.proposal-signoff td { border: 1px solid rgb(203 213 225); padding: 0.375rem 0.625rem; }
+.proposal-signatures { display: flex; gap: 2rem; margin-top: 1.5rem; }
+.proposal-signline { border-top: 1px solid rgb(100 116 139); padding-top: 0.25rem; width: 12rem; color: rgb(100 116 139); }
+mark.proposal-unknown { background: rgb(254 240 240); color: rgb(185 28 28); padding: 0 0.25rem; border-radius: 0.25rem; }
+.dark table.proposal-table th, .dark table.proposal-table td, .dark table.proposal-signoff td { border-color: rgb(255 255 255 / 0.15); }
+.dark table.proposal-table th { background: rgb(255 255 255 / 0.05); }
+.dark .proposal-signline { border-color: rgb(148 163 184); color: rgb(148 163 184); }
+
+/* Trix toolbar in dark mode. */
+.dark trix-toolbar .trix-button-row { border-color: rgb(255 255 255 / 0.15); }
+.dark trix-toolbar .trix-button-group { border-color: rgb(255 255 255 / 0.15); }
+.dark trix-toolbar .trix-button { color: rgb(226 232 240); }
+.dark trix-toolbar .trix-button.trix-active { background: rgb(255 255 255 / 0.1); }
+.dark trix-editor { border-color: rgb(255 255 255 / 0.15); background: rgb(255 255 255 / 0.05); color: rgb(241 245 249); }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ProposalFileController;
 use App\Models\DemoKey;
 use App\Models\Deployment;
 use App\Models\Invoice;
@@ -69,6 +70,24 @@ Route::middleware(['auth', 'verified', 'can:ops.access'])->group(function () {
 
     Volt::route('deployments/{deployment:uuid}/licence', 'pages.licences.edit')
         ->name('licences.edit');
+
+    Volt::route('proposals', 'pages.proposals.index')
+        ->name('proposals.index');
+
+    Volt::route('proposals/create', 'pages.proposals.create')
+        ->name('proposals.create');
+
+    Volt::route('proposals/templates', 'pages.proposals.templates.index')
+        ->name('proposal-templates.index');
+
+    Volt::route('proposals/templates/{template}', 'pages.proposals.templates.edit')
+        ->name('proposal-templates.edit');
+
+    Route::get('proposals/{proposal}/pdf', [ProposalFileController::class, 'pdf'])
+        ->name('proposals.pdf');
+
+    Route::get('proposals/{proposal}/docx', [ProposalFileController::class, 'docx'])
+        ->name('proposals.docx');
 
     Route::get('deployments/{deployment:uuid}/licence/invoices/{invoice}', function (Deployment $deployment, Invoice $invoice) {
         abort_unless($invoice->deployment_id === $deployment->id, 404);

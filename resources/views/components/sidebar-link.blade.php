@@ -11,6 +11,8 @@ $iconComponents = [
     'inbox' => 'lucide-inbox',
     'ticket' => 'lucide-ticket',
     'receipt' => 'lucide-receipt',
+    'file-text' => 'lucide-file-text',
+    'layout-template' => 'lucide-layout-template',
     'sliders' => 'lucide-sliders-horizontal',
     'users' => 'lucide-users',
 ];

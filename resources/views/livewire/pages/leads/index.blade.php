@@ -94,6 +94,30 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
+     * Stage the lead for quoting and hand over to proposal generation.
+     * The create page pre-fills from it unchanged.
+     */
+    public function quote(int $id): void
+    {
+        $this->authorize('ops.access');
+
+        $lead = Lead::findOrFail($id);
+
+        session([
+            'proposal_prefill' => [
+                'lead_id' => $lead->id,
+                'school' => $lead->school ?? $lead->contact_name,
+                'client' => $lead->contact_name,
+                'contact' => $lead->contact_email,
+                'band' => $lead->band,
+                'product_id' => $lead->product?->id,
+            ],
+        ]);
+
+        $this->redirect(route('proposals.create'), navigate: true);
+    }
+
+    /**
      * Stage the quote snapshot for registration and hand over to the
      * registration page. Registration and licence pages pre-fill
      * from it unchanged.
@@ -203,6 +227,9 @@ new #[Layout('layouts.app')] class extends Component
                                             @if ($lead->status !== Lead::STATUS_CONVERTED)
                                                 <x-icon-button tone="brand" wire:click="convert({{ $lead->id }})" label="Convert lead">
                                                     <x-lucide-arrow-right class="w-4 h-4" aria-hidden="true" />
+                                                </x-icon-button>
+                                                <x-icon-button wire:click="quote({{ $lead->id }})" label="Quote proposal">
+                                                    <x-lucide-file-text class="w-4 h-4" aria-hidden="true" />
                                                 </x-icon-button>
                                             @endif
                                             @if ($lead->status === Lead::STATUS_NEW)
