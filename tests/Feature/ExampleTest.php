@@ -1,7 +1,9 @@
 <?php
 
-it('returns a successful response', function () {
-    $response = $this->get('/');
+it('sends guests to login and staff to the dashboard', function () {
+    $this->get('/')->assertRedirect(route('login'));
 
-    $response->assertStatus(200);
+    $this->actingAs(owner());
+
+    $this->get('/')->assertRedirect(route('dashboard'));
 });

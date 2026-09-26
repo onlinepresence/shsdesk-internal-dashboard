@@ -1,58 +1,89 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# ControlDesk
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Internal ops control plane for our school products (starting with FlowEdu).
+Staff use it to register school deployments, issue licences, bill invoices,
+track leads, and mint access keys. It is **not student-facing** — schools
+never log in here; their software phones home to it.
 
-## About Laravel
+## What it does
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Deployments registry** — every school product instance, its version, and last check-in.
+- **Licences** — terms per deployment: modules, student caps, start/expiry, pricing snapshot.
+- **Invoices** — proforma bills generated from saved licence terms; paid ones are immutable.
+- **Leads** — quote requests from product sites, reviewed and converted into deployments.
+- **Keys** — demo keys for prospects and one-time enrollment codes that bind an install.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Who logs in
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Staff only. Public registration is closed — accounts are invite-only:
 
-## Learning Laravel
+- First run seeds `admin@controldesk.com` (rotate the password on first login).
+- After that, super-admins invite staff from the **Users** page; invites arrive by email.
+- Deactivated accounts cannot log in. Unverified emails get a resend banner.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## Run it locally
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+Prereqs: PHP 8.4+, Composer, MySQL running locally.
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+cp .env.example .env
+composer install
+php artisan desk:setup
+php artisan serve
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+`desk:setup` fills only the gaps: app key, licence signing key, migrations,
+owner account, storage link. There is no homepage — the root URL opens
+straight onto login, and signed-in staff land on the dashboard:
 
-## Contributing
+- <http://localhost:8000>
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Fresh database from scratch:
 
-## Code of Conduct
+```bash
+php artisan migrate --seed
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Run the suite and the frontend build:
 
-## Security Vulnerabilities
+```bash
+php artisan test --compact
+npm run build
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Enroll a pilot school
 
-## License
+1. Log in, open **Deployments**, register the school to create its record.
+2. Open the deployment, mint an enrollment code, copy it once.
+3. From the school server, redeem it for a heartbeat token:
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+curl -X POST http://localhost:8000/api/v1/enroll \
+  -H "Content-Type: application/json" \
+  -d '{"code":"PASTE-CODE-HERE","product":"flowedu"}'
+```
+
+4. The school install then checks in with that token:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/heartbeats \
+  -H "Authorization: Bearer PASTE-TOKEN-HERE" \
+  -H "Content-Type: application/json" \
+  -d '{"deployment_uuid":"PASTE-UUID-HERE","product":"flowedu","app_version":"1.2.0","counts":{"students":120,"teachers":12,"users":135},"modules_in_use":["attendance"]}'
+```
+
+Codes are single-use and expire in 30 minutes; a consumed code replays the
+licence snapshot without minting a second token.
+
+## Secrets
+
+Secrets live in **environment only, never the repo**:
+
+- `APP_KEY` — sessions and cookies. Missing on first run; `desk:setup` makes one.
+- `LICENCE_SIGNING_KEY` — 64-hex seed signing every licence and demo document.
+- `DB_*` — local MySQL (`dashboard` database per `.env.example`).
+- `MAIL_*` — log driver locally (mail prints to the log); set a real driver plus
+  `MAIL_FROM_ADDRESS` in production with zero code change.
+
+If it isn't in `.env`, it doesn't exist. Check the First-run setup panel on the
+dashboard — it lists open gaps and disappears when clean.
