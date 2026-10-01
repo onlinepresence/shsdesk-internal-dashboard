@@ -58,30 +58,43 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
-     * Products a proposal may be quoted under, live from the table.
+     * Active products a proposal may be quoted under, live from the
+     * table. Inactive products quote nothing until activated.
      *
      * @return Collection<int, Product>
      */
     #[Computed]
     public function products(): Collection
     {
-        return Product::orderBy('name')->get();
+        return Product::where('active', true)->orderBy('name')->get();
     }
 
     /**
-     * Templates for the picked product. Picking the product first keeps
-     * the list short; clearing it lists everything.
+     * Templates for the picked product. Nothing lists until a product
+     * is picked — proposals always price one product.
      *
      * @return Collection<int, ProposalTemplate>
      */
     #[Computed]
     public function templates(): Collection
     {
+        if ($this->product_id === null) {
+            return ProposalTemplate::query()->whereRaw('1 = 0')->get();
+        }
+
         return ProposalTemplate::query()
             ->with('product')
-            ->when($this->product_id !== null, fn ($query) => $query->where('product_id', $this->product_id))
+            ->where('product_id', $this->product_id)
             ->orderBy('title')
             ->get();
+    }
+
+    /**
+     * Switching products invalidates the picked template.
+     */
+    public function updatedProductId(): void
+    {
+        $this->reset('proposal_template_id');
     }
 
     /**
@@ -148,16 +161,17 @@ new #[Layout('layouts.app')] class extends Component
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                         <x-input-label for="product_id" :value="__('Product')" />
-                        <x-select wire:model.live="product_id" id="product_id" name="product_id" class="mt-1 block w-full">
-                            <option value="">{{ __('All products') }}</option>
+                        <x-select wire:model.live="product_id" id="product_id" name="product_id" required class="mt-1 block w-full">
+                            <option value="">{{ __('Select a product') }}</option>
                             @foreach ($this->products as $product)
                                 <option value="{{ $product->id }}">{{ $product->name }}</option>
                             @endforeach
                         </x-select>
+                        <x-input-error :messages="$errors->get('product_id')" class="mt-2" />
                     </div>
                     <div>
                         <x-input-label for="proposal_template_id" :value="__('Template')" />
-                        <x-select wire:model="proposal_template_id" id="proposal_template_id" name="proposal_template_id" required class="mt-1 block w-full">
+                        <x-select wire:model="proposal_template_id" id="proposal_template_id" name="proposal_template_id" required :disabled="$product_id === null" class="mt-1 block w-full">
                             <option value="">{{ __('Pick a template') }}</option>
                             @foreach ($this->templates as $template)
                                 <option value="{{ $template->id }}">{{ $template->title }} (v{{ $template->version }})</option>

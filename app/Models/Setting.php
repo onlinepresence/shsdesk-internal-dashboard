@@ -140,6 +140,13 @@ class Setting extends Model
         return $value === null || $value === '' ? $default : (int) $value;
     }
 
+    public static function getIntForProduct(?int $productId, string $key, int $default = 0): int
+    {
+        $value = static::getForProduct($productId, $key);
+
+        return $value === null || $value === '' ? $default : (int) $value;
+    }
+
     /**
      * Live core pricing bands, custom-quote band last.
      *

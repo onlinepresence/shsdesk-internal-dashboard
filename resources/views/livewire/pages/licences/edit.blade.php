@@ -4,6 +4,7 @@ use App\Models\Deployment;
 use App\Models\Feature;
 use App\Models\Invoice;
 use App\Models\Licence;
+use App\Models\Product;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -522,7 +523,8 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->authorize('ops.access');
 
-        $dueDays = max(1, Setting::getInt(Setting::INVOICE_DUE_DAYS, 30));
+        $productId = Product::where('slug', $this->deployment->product)->value('id');
+        $dueDays = max(1, Setting::getIntForProduct($productId, Setting::INVOICE_DUE_DAYS, 30));
         $this->due_at = today()->addDays($dueDays)->toDateString();
         $this->next_payment_at = today()->addYear()->toDateString();
         $this->resetValidation();
@@ -559,6 +561,7 @@ new #[Layout('layouts.app')] class extends Component
         ]);
 
         $moduleFlags = array_fill_keys($this->modules, true);
+        $productId = Product::where('slug', $this->deployment->product)->value('id');
 
         $invoice = $this->deployment->invoices()->create([
             'licence_id' => $this->deployment->latestLicence?->id,
@@ -569,13 +572,13 @@ new #[Layout('layouts.app')] class extends Component
             ],
             'due_at' => $validated['due_at'],
             'next_payment_at' => $validated['next_payment_at'],
-            'doc_title' => Setting::get(Setting::INVOICE_DOC_TITLE, 'Proforma Invoice'),
+            'doc_title' => Setting::getForProduct($productId, Setting::INVOICE_DOC_TITLE, 'Proforma Invoice'),
             'issuer' => [
-                'company' => Setting::get(Setting::INVOICE_COMPANY, 'Matme Inc.'),
-                'department' => Setting::get(Setting::INVOICE_DEPARTMENT),
-                'email' => Setting::get(Setting::INVOICE_EMAIL),
-                'phone' => Setting::get(Setting::INVOICE_PHONE),
-                'location' => Setting::get(Setting::INVOICE_LOCATION),
+                'company' => Setting::getForProduct($productId, Setting::INVOICE_COMPANY, 'Matme Inc.'),
+                'department' => Setting::getForProduct($productId, Setting::INVOICE_DEPARTMENT),
+                'email' => Setting::getForProduct($productId, Setting::INVOICE_EMAIL),
+                'phone' => Setting::getForProduct($productId, Setting::INVOICE_PHONE),
+                'location' => Setting::getForProduct($productId, Setting::INVOICE_LOCATION),
             ],
             'created_by' => Auth::id(),
         ]);

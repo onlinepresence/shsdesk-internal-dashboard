@@ -251,7 +251,7 @@ new #[Layout('layouts.app')] class extends Component
             <x-input-error :messages="$errors->get('delete')" class="mt-1" />
 
             <x-card>
-                <x-table loading-except="new_title, new_product_id, cancelCreate, import_file, import_product_id, import_title, import_types, cancelImport">
+                <x-table loading-except="new_title, new_product_id, cancelCreate, import_file, import_product_id, import_title, import_types, cancelImport, deletingId">
                     <x-table.head>
                         <x-table.row :hover="false">
                             <x-table.heading>Template</x-table.heading>

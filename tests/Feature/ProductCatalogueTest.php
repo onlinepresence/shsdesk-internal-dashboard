@@ -72,6 +72,48 @@ test('features filter by picked product and keys scope per product', function ()
         ->assertDontSee('Financial Portal');
 });
 
+test('switching products reloads the pricing form', function () {
+    $flowedu = floweduId();
+    $shsdesk = Product::where('slug', 'shsdesk')->firstOrFail()->id;
+
+    Setting::setForProduct($flowedu, Setting::CURRENCY, 'USD');
+
+    $this->actingAs(owner());
+
+    $component = Volt::test('pages.catalogue.index')
+        ->set('product_id', $shsdesk)
+        ->assertSet('currency', 'GHS')
+        ->assertSee('value="GHS"', false)
+        ->set('product_id', $flowedu)
+        ->assertSet('currency', 'USD')
+        ->assertSee('value="USD"', false);
+
+    // The pricing form remounts per product so deferred inputs pick up
+    // the reloaded values instead of showing stale ones.
+    $component->assertSee('pricing-form-'.$flowedu, false);
+});
+
+test('proposal templates gate on a picked active product', function () {
+    ProposalTemplate::factory()->create([
+        'product_id' => floweduId(),
+        'title' => 'FlowEdu Quotation',
+    ]);
+
+    $this->actingAs(owner());
+
+    $component = Volt::test('pages.proposals.create')
+        ->assertSee('Select a product')
+        ->assertSee('FlowEdu')
+        ->assertDontSee('SHSDesk')
+        ->assertDontSee('FlowEdu Quotation');
+
+    expect($component->get('templates'))->toBeEmpty();
+
+    $component
+        ->set('product_id', floweduId())
+        ->assertSee('FlowEdu Quotation');
+});
+
 test('product overrides win with global fallback', function () {
     $flowedu = floweduId();
     $shsdesk = Product::where('slug', 'shsdesk')->firstOrFail()->id;

@@ -192,7 +192,7 @@ new #[Layout('layouts.app')] class extends Component
                     </x-select>
                 </div>
 
-                <x-table>
+                <x-table loading-except="viewingId, deletingId, closeDetail, cancelDelete">
                     <x-table.head>
                         <x-table.row :hover="false">
                             <x-table.heading>Received</x-table.heading>

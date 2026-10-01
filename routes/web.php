@@ -5,6 +5,7 @@ use App\Models\DemoKey;
 use App\Models\Deployment;
 use App\Models\Invoice;
 use App\Models\Licence;
+use App\Models\Product;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
@@ -93,6 +94,7 @@ Route::middleware(['auth', 'verified', 'can:ops.access'])->group(function () {
         abort_unless($invoice->deployment_id === $deployment->id, 404);
 
         $issuer = $invoice->issuer ?? [];
+        $productId = Product::where('slug', $deployment->product)->value('id');
 
         return view('licences.invoice', [
             'deployment' => $deployment,
@@ -100,13 +102,13 @@ Route::middleware(['auth', 'verified', 'can:ops.access'])->group(function () {
             'contact' => $invoice->contact ?? ['college_name' => $deployment->school_name],
             'invoiceNo' => $invoice->invoice_no ?? 'FE-DRAFT',
             'issuedAt' => $invoice->created_at,
-            'docTitle' => $invoice->doc_title ?? Setting::get(Setting::INVOICE_DOC_TITLE, 'Proforma Invoice'),
+            'docTitle' => $invoice->doc_title ?? Setting::getForProduct($productId, Setting::INVOICE_DOC_TITLE, 'Proforma Invoice'),
             'issuer' => [
-                'company' => $issuer['company'] ?? Setting::get(Setting::INVOICE_COMPANY, 'Matme Inc.'),
-                'department' => $issuer['department'] ?? Setting::get(Setting::INVOICE_DEPARTMENT),
-                'email' => $issuer['email'] ?? Setting::get(Setting::INVOICE_EMAIL),
-                'phone' => $issuer['phone'] ?? Setting::get(Setting::INVOICE_PHONE),
-                'location' => $issuer['location'] ?? Setting::get(Setting::INVOICE_LOCATION),
+                'company' => $issuer['company'] ?? Setting::getForProduct($productId, Setting::INVOICE_COMPANY, 'Matme Inc.'),
+                'department' => $issuer['department'] ?? Setting::getForProduct($productId, Setting::INVOICE_DEPARTMENT),
+                'email' => $issuer['email'] ?? Setting::getForProduct($productId, Setting::INVOICE_EMAIL),
+                'phone' => $issuer['phone'] ?? Setting::getForProduct($productId, Setting::INVOICE_PHONE),
+                'location' => $issuer['location'] ?? Setting::getForProduct($productId, Setting::INVOICE_LOCATION),
             ],
             'dueAt' => $invoice->due_at,
             'nextPaymentAt' => $invoice->next_payment_at,

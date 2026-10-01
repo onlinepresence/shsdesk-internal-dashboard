@@ -3,6 +3,7 @@
 use App\Models\Deployment;
 use App\Models\Invoice;
 use App\Models\Licence;
+use App\Models\Product;
 use App\Models\Setting;
 use Database\Seeders\CatalogueSeeder;
 use Database\Seeders\SettingsSeeder;
@@ -311,6 +312,8 @@ test('index exposes icon actions per status', function () {
 test('invoice settings save from catalogue and log the change', function () {
     $this->actingAs(actingSuperAdmin());
 
+    $floweduId = Product::where('slug', 'flowedu')->firstOrFail()->id;
+
     Volt::test('pages.catalogue.index')
         ->set('doc_title', 'Tax Invoice')
         ->set('company', 'Acme Ltd')
@@ -320,9 +323,13 @@ test('invoice settings save from catalogue and log the change', function () {
         ->assertHasNoErrors()
         ->assertDispatched('toast');
 
-    expect(Setting::get(Setting::INVOICE_DOC_TITLE))->toBe('Tax Invoice');
-    expect(Setting::get(Setting::INVOICE_COMPANY))->toBe('Acme Ltd');
-    expect(Setting::get(Setting::INVOICE_DUE_DAYS))->toBe('14');
+    // Saving writes the picked product's issuer; shared identity stays.
+    expect(Setting::getForProduct($floweduId, Setting::INVOICE_DOC_TITLE))->toBe('Tax Invoice');
+    expect(Setting::getForProduct($floweduId, Setting::INVOICE_COMPANY))->toBe('Acme Ltd');
+    expect(Setting::getForProduct($floweduId, Setting::INVOICE_DUE_DAYS))->toBe('14');
+    expect(Setting::get(Setting::INVOICE_DOC_TITLE))->toBe('Proforma Invoice');
+    expect(Setting::get(Setting::INVOICE_COMPANY))->toBe('Matme Inc.');
+    expect(Setting::get(Setting::INVOICE_DUE_DAYS))->toBe('30');
     $this->assertDatabaseHas('activity_log', ['description' => 'invoice-settings.updated']);
 });
 
@@ -350,4 +357,28 @@ test('stored invoice prints its snapshot title, issuer, and dates', function () 
         ->assertSee('Tax Invoice')
         ->assertSee('Acme Ltd')
         ->assertSee(today()->addDays(14)->format('M d, Y'));
+});
+
+test('invoice print falls back to the deployment product issuer', function () {
+    $this->actingAs(owner());
+
+    $deployment = Deployment::factory()->create(['product' => 'flowedu']);
+    $floweduId = Product::query()->firstOrCreate(
+        ['slug' => 'flowedu'],
+        ['name' => 'FlowEdu', 'active' => true],
+    )->id;
+
+    Setting::setForProduct($floweduId, Setting::INVOICE_COMPANY, 'FlowEdu Ltd');
+    Setting::setForProduct($floweduId, Setting::INVOICE_DOC_TITLE, 'FlowEdu Invoice');
+
+    $invoice = Invoice::factory()->for($deployment)->create([
+        'contact' => ['college_name' => $deployment->school_name],
+        'due_at' => today()->addDays(14)->toDateString(),
+        'next_payment_at' => today()->addYear()->toDateString(),
+    ]);
+
+    $this->get(route('licences.invoices.show', [$deployment->uuid, $invoice->id]))
+        ->assertOk()
+        ->assertSee('FlowEdu Invoice')
+        ->assertSee('FlowEdu Ltd');
 });

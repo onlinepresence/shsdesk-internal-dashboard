@@ -85,14 +85,24 @@ new #[Layout('layouts.app')] class extends Component
 
         $this->product_id = $this->defaultProductId();
         $this->loadPricingForm();
+        $this->loadInvoiceForm();
+    }
 
-        $this->doc_title = Setting::get(Setting::INVOICE_DOC_TITLE, 'Proforma Invoice');
-        $this->company = Setting::get(Setting::INVOICE_COMPANY, 'Matme Inc.');
-        $this->department = Setting::get(Setting::INVOICE_DEPARTMENT);
-        $this->invoice_email = Setting::get(Setting::INVOICE_EMAIL);
-        $this->invoice_phone = Setting::get(Setting::INVOICE_PHONE);
-        $this->invoice_location = Setting::get(Setting::INVOICE_LOCATION);
-        $this->due_days = Setting::get(Setting::INVOICE_DUE_DAYS, '30');
+    /**
+     * Invoice document values effective for the picked product: scoped
+     * overrides win, shared issuer identity fills the rest.
+     */
+    protected function loadInvoiceForm(): void
+    {
+        $productId = $this->product_id;
+
+        $this->doc_title = Setting::getForProduct($productId, Setting::INVOICE_DOC_TITLE, 'Proforma Invoice');
+        $this->company = Setting::getForProduct($productId, Setting::INVOICE_COMPANY, 'Matme Inc.');
+        $this->department = Setting::getForProduct($productId, Setting::INVOICE_DEPARTMENT);
+        $this->invoice_email = Setting::getForProduct($productId, Setting::INVOICE_EMAIL);
+        $this->invoice_phone = Setting::getForProduct($productId, Setting::INVOICE_PHONE);
+        $this->invoice_location = Setting::getForProduct($productId, Setting::INVOICE_LOCATION);
+        $this->due_days = Setting::getForProduct($productId, Setting::INVOICE_DUE_DAYS, '30');
     }
 
     /**
@@ -126,6 +136,7 @@ new #[Layout('layouts.app')] class extends Component
 
         $this->resetPage();
         $this->loadPricingForm();
+        $this->loadInvoiceForm();
     }
 
     public function updatedShowInactiveProducts(): void
@@ -137,6 +148,7 @@ new #[Layout('layouts.app')] class extends Component
         ) {
             $this->product_id = $this->defaultProductId();
             $this->loadPricingForm();
+            $this->loadInvoiceForm();
         }
     }
 
@@ -401,14 +413,16 @@ new #[Layout('layouts.app')] class extends Component
     }
 
     /**
-     * Persist invoice document settings. Everything the proforma
-     * invoice needs beyond the quote itself lives here, editable
-     * without touching code. Per-invoice due dates default from
-     * due_days but stay overridable at generation time.
+     * Persist invoice document settings for the picked product. Scoped
+     * overrides win; shared issuer identity fills the rest. Per-invoice
+     * due dates default from due_days but stay overridable at generation
+     * time.
      */
     public function saveInvoiceSettings(): void
     {
         $this->authorize('manage-catalogue');
+
+        abort_unless($this->product_id !== null, 422, 'Pick a product first.');
 
         foreach (['department', 'invoice_location'] as $field) {
             if ($this->{$field} === '') {
@@ -427,18 +441,19 @@ new #[Layout('layouts.app')] class extends Component
         ]);
 
         $before = $this->invoiceSnapshot();
+        $productId = $this->product_id;
 
-        Setting::set(Setting::INVOICE_DOC_TITLE, $validated['doc_title']);
-        Setting::set(Setting::INVOICE_COMPANY, $validated['company']);
-        Setting::set(Setting::INVOICE_DEPARTMENT, $validated['department']);
-        Setting::set(Setting::INVOICE_EMAIL, $validated['invoice_email']);
-        Setting::set(Setting::INVOICE_PHONE, $validated['invoice_phone']);
-        Setting::set(Setting::INVOICE_LOCATION, $validated['invoice_location']);
-        Setting::set(Setting::INVOICE_DUE_DAYS, (string) $validated['due_days']);
+        Setting::setForProduct($productId, Setting::INVOICE_DOC_TITLE, $validated['doc_title']);
+        Setting::setForProduct($productId, Setting::INVOICE_COMPANY, $validated['company']);
+        Setting::setForProduct($productId, Setting::INVOICE_DEPARTMENT, $validated['department']);
+        Setting::setForProduct($productId, Setting::INVOICE_EMAIL, $validated['invoice_email']);
+        Setting::setForProduct($productId, Setting::INVOICE_PHONE, $validated['invoice_phone']);
+        Setting::setForProduct($productId, Setting::INVOICE_LOCATION, $validated['invoice_location']);
+        Setting::setForProduct($productId, Setting::INVOICE_DUE_DAYS, (string) $validated['due_days']);
 
         activity('catalogue')
             ->causedBy(Auth::user())
-            ->withProperties(['before' => $before, 'after' => $this->invoiceSnapshot()])
+            ->withProperties(['product_id' => $productId, 'before' => $before, 'after' => $this->invoiceSnapshot()])
             ->log('invoice-settings.updated');
 
         $this->dispatch('toast', message: __('Invoice settings saved.'));
@@ -473,14 +488,16 @@ new #[Layout('layouts.app')] class extends Component
      */
     protected function invoiceSnapshot(): array
     {
+        $productId = $this->product_id;
+
         return [
-            'doc_title' => Setting::get(Setting::INVOICE_DOC_TITLE),
-            'company' => Setting::get(Setting::INVOICE_COMPANY),
-            'department' => Setting::get(Setting::INVOICE_DEPARTMENT),
-            'email' => Setting::get(Setting::INVOICE_EMAIL),
-            'phone' => Setting::get(Setting::INVOICE_PHONE),
-            'location' => Setting::get(Setting::INVOICE_LOCATION),
-            'due_days' => Setting::get(Setting::INVOICE_DUE_DAYS),
+            'doc_title' => Setting::getForProduct($productId, Setting::INVOICE_DOC_TITLE),
+            'company' => Setting::getForProduct($productId, Setting::INVOICE_COMPANY),
+            'department' => Setting::getForProduct($productId, Setting::INVOICE_DEPARTMENT),
+            'email' => Setting::getForProduct($productId, Setting::INVOICE_EMAIL),
+            'phone' => Setting::getForProduct($productId, Setting::INVOICE_PHONE),
+            'location' => Setting::getForProduct($productId, Setting::INVOICE_LOCATION),
+            'due_days' => Setting::getForProduct($productId, Setting::INVOICE_DUE_DAYS),
         ];
     }
 
@@ -545,7 +562,7 @@ new #[Layout('layouts.app')] class extends Component
 
             <div x-show="tab === 'features'" role="tabpanel" id="panel-features" aria-labelledby="tab-features">
             <x-card>
-                <x-table loading-except="create, edit, cancelEdit, saveGlobals, product_id, show_inactive_products">
+                <x-table loading-except="create, edit, cancelEdit, saveGlobals">
                     <x-table.head>
                         <x-table.row :hover="false">
                             <x-table.heading>Feature</x-table.heading>
@@ -556,8 +573,9 @@ new #[Layout('layouts.app')] class extends Component
                             <x-table.heading><span class="sr-only">Actions</span></x-table.heading>
                         </x-table.row>
                     </x-table.head>
-                    <x-table.body>
-                        @foreach ($this->features as $feature)
+                    @if ($this->features->isNotEmpty())
+                        <x-table.body>
+                            @foreach ($this->features as $feature)
                             <x-table.row>
                                 <x-table.cell>
                                     <div class="font-medium text-slate-900 dark:text-white">{{ $feature->label }}</div>
@@ -578,8 +596,13 @@ new #[Layout('layouts.app')] class extends Component
                                 </x-table.cell>
                                 <x-table.cell>
                                     <span class="flex items-center gap-1">
-                                        <x-icon-button tone="brand" wire:click="edit({{ $feature->id }})" label="Edit feature">
-                                            <x-lucide-pencil class="w-4 h-4" aria-hidden="true" />
+                                        <x-icon-button tone="brand" wire:click="edit({{ $feature->id }})" wire:loading.attr="disabled" wire:target="edit({{ $feature->id }})" label="Edit feature">
+                                            <span wire:loading.remove wire:target="edit({{ $feature->id }})">
+                                                <x-lucide-pencil class="w-4 h-4" aria-hidden="true" />
+                                            </span>
+                                            <span wire:loading wire:target="edit({{ $feature->id }})">
+                                                <x-lucide-loader-circle class="h-4 w-4 animate-spin" aria-hidden="true" />
+                                            </span>
                                         </x-icon-button>
                                         @if ($feature->active)
                                             <x-icon-button tone="danger" wire:click="toggleActive({{ $feature->id }})" label="Deactivate feature">
@@ -594,7 +617,12 @@ new #[Layout('layouts.app')] class extends Component
                                 </x-table.cell>
                             </x-table.row>
                         @endforeach
-                    </x-table.body>
+                        </x-table.body>
+                    @else
+                        <x-table.empty>
+                            <x-empty-state title="No features for this product yet" message="Add the first offering above — keys stay unique per product." />
+                        </x-table.empty>
+                    @endif
                 </x-table>
 
                 <div class="mt-4">
@@ -604,7 +632,7 @@ new #[Layout('layouts.app')] class extends Component
             </div>
 
             <div x-show="tab === 'globals'" role="tabpanel" id="panel-globals" aria-labelledby="tab-globals" style="display: none;">
-            <form wire:submit="saveGlobals" class="flex flex-col gap-6">
+            <form wire:submit="saveGlobals" wire:key="pricing-form-{{ $product_id }}" class="flex flex-col gap-6">
                 <x-alert tone="info" title="Product pricing" :dismissible="false">
                     {{ __('Saving writes this product pricing; shared globals stay as fallback. Proposals snapshot these figures at generation.') }}
                 </x-alert>
@@ -613,24 +641,24 @@ new #[Layout('layouts.app')] class extends Component
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
                             <x-input-label for="currency" :value="__('Currency')" />
-                            <x-text-input wire:model="currency" id="currency" class="mt-1 block w-full" type="text" name="currency" required maxlength="10" />
+                            <x-text-input wire:model="currency" value="{{ $currency }}" id="currency" class="mt-1 block w-full" type="text" name="currency" required maxlength="10" />
                             <x-input-error :messages="$errors->get('currency')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="founding_rate" :value="__('Founding discount rate (0–1)')" />
-                            <x-text-input wire:model="founding_rate" id="founding_rate" class="mt-1 block w-full" type="number" min="0" max="1" step="0.01" name="founding_rate" required />
+                            <x-text-input wire:model="founding_rate" value="{{ $founding_rate }}" id="founding_rate" class="mt-1 block w-full" type="number" min="0" max="1" step="0.01" name="founding_rate" required />
                             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Off the core only, upfront and renewal.</p>
                             <x-input-error :messages="$errors->get('founding_rate')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="bundle_rate" :value="__('Bundle discount rate (0–1)')" />
-                            <x-text-input wire:model="bundle_rate" id="bundle_rate" class="mt-1 block w-full" type="number" min="0" max="1" step="0.01" name="bundle_rate" required />
+                            <x-text-input wire:model="bundle_rate" value="{{ $bundle_rate }}" id="bundle_rate" class="mt-1 block w-full" type="number" min="0" max="1" step="0.01" name="bundle_rate" required />
                             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Off modules from the threshold count up.</p>
                             <x-input-error :messages="$errors->get('bundle_rate')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="bundle_threshold" :value="__('Bundle threshold (modules)')" />
-                            <x-text-input wire:model="bundle_threshold" id="bundle_threshold" class="mt-1 block w-full" type="number" min="1" name="bundle_threshold" required />
+                            <x-text-input wire:model="bundle_threshold" value="{{ $bundle_threshold }}" id="bundle_threshold" class="mt-1 block w-full" type="number" min="1" name="bundle_threshold" required />
                             <x-input-error :messages="$errors->get('bundle_threshold')" class="mt-2" />
                         </div>
                     </div>
@@ -645,17 +673,17 @@ new #[Layout('layouts.app')] class extends Component
                                 <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-200">{{ $row['label'] }}</legend>
                                 <div>
                                     <x-input-label :for="'core_upfront_'.$index" :value="__('Core upfront')" />
-                                    <x-text-input wire:model="core_rows.{{ $index }}.core_upfront" :id="'core_upfront_'.$index" class="mt-1 block w-full" type="number" min="0" step="0.01" required />
+                                    <x-text-input wire:model="core_rows.{{ $index }}.core_upfront" value="{{ $row['core_upfront'] }}" :id="'core_upfront_'.$index" class="mt-1 block w-full" type="number" min="0" step="0.01" required />
                                     <x-input-error :messages="$errors->get('core_rows.'.$index.'.core_upfront')" class="mt-2" />
                                 </div>
                                 <div>
                                     <x-input-label :for="'core_renewal_'.$index" :value="__('Core renewal')" />
-                                    <x-text-input wire:model="core_rows.{{ $index }}.core_renewal" :id="'core_renewal_'.$index" class="mt-1 block w-full" type="number" min="0" step="0.01" required />
+                                    <x-text-input wire:model="core_rows.{{ $index }}.core_renewal" value="{{ $row['core_renewal'] }}" :id="'core_renewal_'.$index" class="mt-1 block w-full" type="number" min="0" step="0.01" required />
                                     <x-input-error :messages="$errors->get('core_rows.'.$index.'.core_renewal')" class="mt-2" />
                                 </div>
                                 <div>
                                     <x-input-label :for="'multiplier_'.$index" :value="__('Module multiplier')" />
-                                    <x-text-input wire:model="core_rows.{{ $index }}.multiplier" :id="'multiplier_'.$index" class="mt-1 block w-full" type="number" min="0" step="0.1" required />
+                                    <x-text-input wire:model="core_rows.{{ $index }}.multiplier" value="{{ $row['multiplier'] }}" :id="'multiplier_'.$index" class="mt-1 block w-full" type="number" min="0" step="0.1" required />
                                     <x-input-error :messages="$errors->get('core_rows.'.$index.'.multiplier')" class="mt-2" />
                                 </div>
                             </fieldset>
@@ -668,42 +696,42 @@ new #[Layout('layouts.app')] class extends Component
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <div>
                             <x-input-label for="hosting_self" :value="__('Hosting — self-hosted setup')" />
-                            <x-text-input wire:model="hosting_self" id="hosting_self" class="mt-1 block w-full" type="number" min="0" step="0.01" name="hosting_self" required />
+                            <x-text-input wire:model="hosting_self" value="{{ $hosting_self }}" id="hosting_self" class="mt-1 block w-full" type="number" min="0" step="0.01" name="hosting_self" required />
                             <x-input-error :messages="$errors->get('hosting_self')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="hosting_managed" :value="__('Hosting — managed setup')" />
-                            <x-text-input wire:model="hosting_managed" id="hosting_managed" class="mt-1 block w-full" type="number" min="0" step="0.01" name="hosting_managed" required />
+                            <x-text-input wire:model="hosting_managed" value="{{ $hosting_managed }}" id="hosting_managed" class="mt-1 block w-full" type="number" min="0" step="0.01" name="hosting_managed" required />
                             <x-input-error :messages="$errors->get('hosting_managed')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="hosting_none" :value="__('Hosting — none')" />
-                            <x-text-input wire:model="hosting_none" id="hosting_none" class="mt-1 block w-full" type="number" min="0" step="0.01" name="hosting_none" required />
+                            <x-text-input wire:model="hosting_none" value="{{ $hosting_none }}" id="hosting_none" class="mt-1 block w-full" type="number" min="0" step="0.01" name="hosting_none" required />
                             <x-input-error :messages="$errors->get('hosting_none')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="config_fee" :value="__('Configuration & data entry')" />
-                            <x-text-input wire:model="config_fee" id="config_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="config_fee" required />
+                            <x-text-input wire:model="config_fee" value="{{ $config_fee }}" id="config_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="config_fee" required />
                             <x-input-error :messages="$errors->get('config_fee')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="migration_fee" :value="__('Legacy data migration')" />
-                            <x-text-input wire:model="migration_fee" id="migration_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="migration_fee" required />
+                            <x-text-input wire:model="migration_fee" value="{{ $migration_fee }}" id="migration_fee" class="mt-1 block w-full" type="number" min="0" step="0.01" name="migration_fee" required />
                             <x-input-error :messages="$errors->get('migration_fee')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="training_admin" :value="__('Remote admin training (each)')" />
-                            <x-text-input wire:model="training_admin" id="training_admin" class="mt-1 block w-full" type="number" min="0" step="0.01" name="training_admin" required />
+                            <x-text-input wire:model="training_admin" value="{{ $training_admin }}" id="training_admin" class="mt-1 block w-full" type="number" min="0" step="0.01" name="training_admin" required />
                             <x-input-error :messages="$errors->get('training_admin')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="training_teacher" :value="__('Remote lecturer training (each)')" />
-                            <x-text-input wire:model="training_teacher" id="training_teacher" class="mt-1 block w-full" type="number" min="0" step="0.01" name="training_teacher" required />
+                            <x-text-input wire:model="training_teacher" value="{{ $training_teacher }}" id="training_teacher" class="mt-1 block w-full" type="number" min="0" step="0.01" name="training_teacher" required />
                             <x-input-error :messages="$errors->get('training_teacher')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="training_onsite" :value="__('On-site training day')" />
-                            <x-text-input wire:model="training_onsite" id="training_onsite" class="mt-1 block w-full" type="number" min="0" step="0.01" name="training_onsite" required />
+                            <x-text-input wire:model="training_onsite" value="{{ $training_onsite }}" id="training_onsite" class="mt-1 block w-full" type="number" min="0" step="0.01" name="training_onsite" required />
                             <x-input-error :messages="$errors->get('training_onsite')" class="mt-2" />
                         </div>
                     </div>
@@ -718,19 +746,22 @@ new #[Layout('layouts.app')] class extends Component
             </div>
 
             <div x-show="tab === 'invoice'" role="tabpanel" id="panel-invoice" aria-labelledby="tab-invoice" style="display: none;">
-            <form wire:submit="saveInvoiceSettings" class="flex flex-col gap-6">
+            <form wire:submit="saveInvoiceSettings" wire:key="invoice-form-{{ $product_id }}" class="flex flex-col gap-6">
+                <x-alert tone="info" title="Per-product issuer" :dismissible="false">
+                    {{ __('Saving writes this product issuer details; shared identity stays as fallback.') }}
+                </x-alert>
                 <x-card>
                     <x-slot name="title">Document &amp; payment terms</x-slot>
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                             <x-input-label for="doc_title" :value="__('Document title')" />
-                            <x-text-input wire:model="doc_title" id="doc_title" class="mt-1 block w-full" type="text" name="doc_title" required maxlength="100" />
+                            <x-text-input wire:model="doc_title" value="{{ $doc_title }}" id="doc_title" class="mt-1 block w-full" type="text" name="doc_title" required maxlength="100" />
                             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Printed as the invoice heading. Defaults to Proforma Invoice.</p>
                             <x-input-error :messages="$errors->get('doc_title')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="due_days" :value="__('Default due in (days)')" />
-                            <x-text-input wire:model="due_days" id="due_days" class="mt-1 block w-full" type="number" min="1" max="365" name="due_days" required />
+                            <x-text-input wire:model="due_days" value="{{ $due_days }}" id="due_days" class="mt-1 block w-full" type="number" min="1" max="365" name="due_days" required />
                             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Payment window from issue. Overridable per invoice.</p>
                             <x-input-error :messages="$errors->get('due_days')" class="mt-2" />
                         </div>
@@ -743,27 +774,27 @@ new #[Layout('layouts.app')] class extends Component
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                             <x-input-label for="company" :value="__('Company')" />
-                            <x-text-input wire:model="company" id="company" class="mt-1 block w-full" type="text" name="company" required maxlength="255" />
+                            <x-text-input wire:model="company" value="{{ $company }}" id="company" class="mt-1 block w-full" type="text" name="company" required maxlength="255" />
                             <x-input-error :messages="$errors->get('company')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="department" :value="__('Department / team')" />
-                            <x-text-input wire:model="department" id="department" class="mt-1 block w-full" type="text" name="department" maxlength="255" />
+                            <x-text-input wire:model="department" value="{{ $department }}" id="department" class="mt-1 block w-full" type="text" name="department" maxlength="255" />
                             <x-input-error :messages="$errors->get('department')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="invoice_email" :value="__('Email')" />
-                            <x-text-input wire:model="invoice_email" id="invoice_email" class="mt-1 block w-full" type="email" name="invoice_email" required maxlength="255" />
+                            <x-text-input wire:model="invoice_email" value="{{ $invoice_email }}" id="invoice_email" class="mt-1 block w-full" type="email" name="invoice_email" required maxlength="255" />
                             <x-input-error :messages="$errors->get('invoice_email')" class="mt-2" />
                         </div>
                         <div>
                             <x-input-label for="invoice_phone" :value="__('Phone')" />
-                            <x-text-input wire:model="invoice_phone" id="invoice_phone" class="mt-1 block w-full" type="text" name="invoice_phone" required maxlength="50" />
+                            <x-text-input wire:model="invoice_phone" value="{{ $invoice_phone }}" id="invoice_phone" class="mt-1 block w-full" type="text" name="invoice_phone" required maxlength="50" />
                             <x-input-error :messages="$errors->get('invoice_phone')" class="mt-2" />
                         </div>
                         <div class="sm:col-span-2">
                             <x-input-label for="invoice_location" :value="__('Location')" />
-                            <x-text-input wire:model="invoice_location" id="invoice_location" class="mt-1 block w-full" type="text" name="invoice_location" maxlength="255" />
+                            <x-text-input wire:model="invoice_location" value="{{ $invoice_location }}" id="invoice_location" class="mt-1 block w-full" type="text" name="invoice_location" maxlength="255" />
                             <x-input-error :messages="$errors->get('invoice_location')" class="mt-2" />
                         </div>
                     </div>

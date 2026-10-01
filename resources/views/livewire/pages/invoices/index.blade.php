@@ -196,7 +196,7 @@ new #[Layout('layouts.app')] class extends Component
             </x-card>
 
             <x-card>
-                <x-table>
+                <x-table loading-except="beginEdit, deletingId">
                     <x-table.head>
                         <x-table.row :hover="false">
                             <x-table.heading>Invoice</x-table.heading>
