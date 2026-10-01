@@ -55,6 +55,7 @@ class RequirePasswordChange
      * Whether every component targeted by a Livewire update is one a
      * flagged user is allowed to use. Unknown shapes fail closed.
      */
+    
     protected function isAllowlistedLivewireCall(Request $request): bool
     {
         $components = $request->input('components');
@@ -64,9 +65,15 @@ class RequirePasswordChange
         }
 
         foreach ($components as $component) {
-            $name = is_array($component) ? ($component['snapshot']['memo']['name'] ?? null) : null;
+            if (! is_array($component)) {
+                return false;
+            }
 
-            if (! in_array($name, self::LIVEWIRE_ALLOWLIST, true)) {
+            // Livewire 3 ships snapshot as a JSON string, not an array.
+            $snapshot = json_decode((string) ($component['snapshot'] ?? ''), true);
+            $name = is_array($snapshot) ? ($snapshot['memo']['name'] ?? null) : null;
+
+        if (! in_array($name, self::LIVEWIRE_ALLOWLIST, true)) {
                 return false;
             }
         }
